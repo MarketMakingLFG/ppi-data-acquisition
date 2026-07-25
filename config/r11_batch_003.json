@@ -1,0 +1,56 @@
+{
+  "authorized_actions": [],
+  "batch_sequence": 3,
+  "categories": [
+    "expectation_history",
+    "specialized_contract_data",
+    "market_time_series",
+    "independent_recognition"
+  ],
+  "collection_only": true,
+  "contract_id": "PPI-R11-BATCH-EVIDENCE-003-R1",
+  "contract_sha256": "20a19c48cc3b31d6cf706f593dcd8eb32f1b51dade90fdc13b420d0850c698fb",
+  "cumulative_tickers": [
+    "AAPL",
+    "MU",
+    "NVDA",
+    "AMD",
+    "AVGO",
+    "INTC",
+    "TSM",
+    "ARM",
+    "QCOM",
+    "MRVL",
+    "GFS",
+    "TXN"
+  ],
+  "expected_bundle_count": 48,
+  "maximum_input_age_hours": 168,
+  "new_candidate_tickers": [
+    "QCOM",
+    "MRVL",
+    "GFS",
+    "TXN"
+  ],
+  "prior_approved_tickers": [
+    "AAPL",
+    "MU",
+    "NVDA",
+    "AMD",
+    "AVGO",
+    "INTC",
+    "TSM",
+    "ARM"
+  ],
+  "private_dispatch_authorized": false,
+  "production_authorized": false,
+  "queue_receipt_sha256": "afd074a959c2c612f6dd5f6c91ed66ce2346144167c73b4d21999005e9a049b3",
+  "r12_authorized": false,
+  "registry_mutation_authorized": false,
+  "repository": "spoudel2010-ux/ppi-data-acquisition",
+  "schema_version": "1.0.0",
+  "scoring_authorized": false,
+  "trading_authorized": false,
+  "upstream_reference_repository": "poudlesuman32-star/ai-market-news",
+  "upstream_reference_sha": "2beef2ba5b935c76e02b74df2d02b33221784e19"
+}
