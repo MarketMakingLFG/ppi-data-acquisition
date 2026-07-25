@@ -1,0 +1,132 @@
+name: Collect R11 public provider evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type COLLECT-R11-BATCH-3
+        required: true
+        type: string
+      request_id:
+        description: Optional immutable correlation identifier
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ppi-r11-public-provider-evidence
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+      PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+      OUTPUT_ROOT: runtime/r11-batch3-public-candidate
+      CONFIRMATION: ${{ inputs.confirmation }}
+      REQUEST_ID: ${{ inputs.request_id }}
+    steps:
+      - name: Check out public acquisition code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate manual-only boundary and credentials
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "COLLECT-R11-BATCH-3"
+          test -n "$PPI_ALPHA_VANTAGE_API_KEY"
+          test -n "$PPI_MARKETDATA_TOKEN"
+          test "${#PPI_ALPHA_VANTAGE_API_KEY}" -ge 8
+          test "${#PPI_MARKETDATA_TOKEN}" -ge 8
+          if [ -n "$REQUEST_ID" ]; then
+            case "$REQUEST_ID" in
+              r11-batch3-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+              *) echo "Invalid request_id" >&2; exit 1 ;;
+            esac
+          fi
+
+      - name: Compile and test the public collection boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile src/collect_raw_provider_evidence.py
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Collect exactly forty-eight raw provider bundles
+        run: |
+          set -euo pipefail
+          observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python src/collect_raw_provider_evidence.py \
+            --scope config/r11_batch_003.json \
+            --output-root "$OUTPUT_ROOT" \
+            --observed-at "$observed_at"
+
+      - name: Add dispatch correlation
+        if: inputs.request_id != ''
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(os.environ["OUTPUT_ROOT"]) / "dispatch-correlation.json"
+          path.write_text(json.dumps({
+              "schema_version": "1.0.0",
+              "request_id": os.environ["REQUEST_ID"],
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "head_sha": os.environ["GITHUB_SHA"].lower(),
+          }, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          PY
+
+      - name: Confirm credentials are absent from retained files
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ["OUTPUT_ROOT"])
+          secrets = [
+              os.environ.get("PPI_ALPHA_VANTAGE_API_KEY", "").encode(),
+              os.environ.get("PPI_MARKETDATA_TOKEN", "").encode(),
+          ]
+          for path in root.rglob("*") if root.exists() else []:
+              if not path.is_file():
+                  continue
+              payload = path.read_bytes()
+              for value in [item for item in secrets if item]:
+                  assert value not in payload, f"credential leaked into {path}"
+          PY
+
+      - name: Validate immutable output shape
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["OUTPUT_ROOT"])
+          manifest = json.loads((root / "cumulative-manifest.json").read_text(encoding="utf-8"))
+          receipt = json.loads((root / "collection-receipt.json").read_text(encoding="utf-8"))
+          assert manifest["bundle_count"] == 48
+          assert len(manifest["cumulative_tickers"]) == 12
+          assert len(list((root / "bundles").rglob("*.json"))) == 48
+          assert receipt["provider_request_count"] == 48
+          assert receipt["private_repository_dispatched"] is False
+          assert receipt["authorized_actions"] == []
+          PY
+
+      - name: Retain public acquisition candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ppi-r11-public-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/r11-batch3-public-candidate/
+          retention-days: 30
+          if-no-files-found: error
