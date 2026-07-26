@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "contract_id": "PPI-R11-PUBLIC-ACQUISITION-003-R1",
+  "status": "frozen",
+  "private_contract_id": "PPI-R11-BATCH-EVIDENCE-003-R1",
+  "collector_release_id": "PPI-PUBLIC-COLLECTOR-003-R1",
+  "collector_release_contract_path": "contracts/PPI-PUBLIC-COLLECTOR-003-R1.json",
+  "collector_binding_method": "runtime_head_sha_and_receipt_hashes",
+  "repository": "spoudel2010-ux/ppi-data-acquisition",
+  "repository_id": 1312286476,
+  "private_handoff_repository": "musksuman3/ai-signal-engine",
+  "private_handoff_repository_id": 1290626648,
+  "workflow_path": ".github/workflows/collect-r11-public-evidence.yml",
+  "batch_sequence": 3,
+  "cumulative_tickers": [
+    "AAPL",
+    "MU",
+    "NVDA",
+    "AMD",
+    "AVGO",
+    "INTC",
+    "TSM",
+    "ARM",
+    "QCOM",
+    "MRVL",
+    "GFS",
+    "TXN"
+  ],
+  "new_candidate_tickers": [
+    "QCOM",
+    "MRVL",
+    "GFS",
+    "TXN"
+  ],
+  "categories": [
+    "expectation_history",
+    "independent_recognition",
+    "market_time_series",
+    "specialized_contract_data"
+  ],
+  "queue_receipt_sha256": "afd074a959c2c612f6dd5f6c91ed66ce2346144167c73b4d21999005e9a049b3",
+  "maximum_input_age_hours": 168,
+  "exact_success_package": {
+    "bundle_count": 48,
+    "manifest_count": 1,
+    "receipt_count": 1,
+    "path_count": 50
+  },
+  "public_storage": "hash_and_metadata_only",
+  "private_handoff": "private_repository_release_asset",
+  "private_dispatch_authorized": false,
+  "scoring_authorized": false,
+  "registry_mutation_authorized": false,
+  "production_authorized": false,
+  "publication_authorized": false,
+  "trading_authorized": false,
+  "r12_authorized": false,
+  "authorized_actions": []
+}
