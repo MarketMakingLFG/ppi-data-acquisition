@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "contract_id": "PPI-R11-PUBLIC-ACQUISITION-003",
+  "status": "superseded_before_target_collection",
+  "superseded_by": "PPI-R11-PUBLIC-ACQUISITION-003-R1",
+  "reason": "The R1 contract adds exact 50-path packaging, provider licensing dispositions, a non-public private-release handoff, stable repository IDs, and a versioned collector release.",
+  "target_execution_under_this_contract": false,
+  "private_dispatch_enabled": false,
+  "private_calculation_authorized": false,
+  "registry_mutation_authorized": false,
+  "broker_or_trading_authorized": false,
+  "production_authorized": false,
+  "publication_authorized": false,
+  "r12_authorized": false,
+  "authorized_actions": []
+}

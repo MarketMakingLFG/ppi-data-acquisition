@@ -1,0 +1,168 @@
+name: Collect R11 public provider evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type COLLECT-R11-BATCH-3
+        required: true
+        type: string
+      request_id:
+        description: Optional immutable correlation identifier
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ppi-r11-public-provider-evidence
+  cancel-in-progress: false
+
+env:
+  PRIVATE_RELEASE_HANDOFF_ENABLED: true
+  OUTPUT_ROOT: runtime/r11-batch3-private-package
+  SAFE_ROOT: runtime/r11-batch3-public-safe
+  FAILURE_ROOT: runtime/r11-batch3-failure
+  CONFIRMATION: ${{ inputs.confirmation }}
+  REQUEST_ID: ${{ inputs.request_id }}
+
+jobs:
+  collect-and-handoff:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out approved public collector
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Validate exact public boundary and secrets
+        env:
+          PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+          PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "COLLECT-R11-BATCH-3"
+          test -n "$PPI_ALPHA_VANTAGE_API_KEY"
+          test -n "$PPI_MARKETDATA_TOKEN"
+          test -n "$PPI_PRIVATE_HANDOFF_TOKEN"
+          test "${#PPI_ALPHA_VANTAGE_API_KEY}" -ge 8
+          test "${#PPI_MARKETDATA_TOKEN}" -ge 8
+          test "${#PPI_PRIVATE_HANDOFF_TOKEN}" -ge 20
+          if [ -n "$REQUEST_ID" ]; then
+            case "$REQUEST_ID" in
+              r11-batch3-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+              *) echo "Invalid request_id" >&2; exit 1 ;;
+            esac
+          fi
+          python -m py_compile src/collect_raw_provider_evidence.py src/publish_private_handoff.py
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Collect exactly 48 bundles and 50 package paths
+        id: collect
+        env:
+          PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+          PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTPUT_ROOT" "$SAFE_ROOT" "$FAILURE_ROOT"
+          python src/collect_raw_provider_evidence.py \
+            --scope config/r11_batch_003.json \
+            --output-root "$OUTPUT_ROOT" \
+            --request-id "$REQUEST_ID" \
+            --failure-output "$FAILURE_ROOT/failure-diagnostics.json"
+
+      - name: Confirm secrets are absent from retained package
+        env:
+          PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+          PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          roots = [Path(os.environ["OUTPUT_ROOT"]), Path(os.environ["SAFE_ROOT"]), Path(os.environ["FAILURE_ROOT"])]
+          secrets = [
+              os.environ.get("PPI_ALPHA_VANTAGE_API_KEY", "").encode(),
+              os.environ.get("PPI_MARKETDATA_TOKEN", "").encode(),
+              os.environ.get("PPI_PRIVATE_HANDOFF_TOKEN", "").encode(),
+          ]
+          for root in roots:
+              for path in root.rglob("*") if root.exists() else []:
+                  if not path.is_file():
+                      continue
+                  payload = path.read_bytes()
+                  for secret in [value for value in secrets if value]:
+                      assert secret not in payload, f"credential leaked into {path}"
+          PY
+
+      - name: Publish exact package to private release
+        env:
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python src/publish_private_handoff.py \
+            --package-root "$OUTPUT_ROOT" \
+            --archive "$RUNNER_TEMP/ppi-r11-private-handoff.zip" \
+            --summary "$SAFE_ROOT/private-handoff-summary.json"
+
+      - name: Build public safe success receipt
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          source = json.loads((Path(os.environ["SAFE_ROOT"]) / "private-handoff-summary.json").read_text(encoding="utf-8"))
+          receipt = {
+              "schema_version": "1.0.0",
+              "status": "public_collection_private_handoff_complete",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "repository_id": int(os.environ["GITHUB_REPOSITORY_ID"]),
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "head_sha": os.environ["GITHUB_SHA"].lower(),
+              "private_release_tag": source["private_release_tag"],
+              "private_asset_name": source["private_asset_name"],
+              "private_asset_sha256": source["private_asset_sha256"],
+              "public_raw_artifact_uploaded": False,
+              "private_repository_dispatched": False,
+              "authorized_actions": [],
+          }
+          payload = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode()
+          receipt["receipt_sha256"] = hashlib.sha256(payload).hexdigest()
+          path = Path(os.environ["SAFE_ROOT"]) / "public-success-receipt.json"
+          path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Retain public safe success metadata
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ppi-r11-public-success-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/r11-batch3-public-safe/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Retain safe failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ppi-r11-public-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/r11-batch3-failure/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Assert raw package was not uploaded publicly
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$PRIVATE_RELEASE_HANDOFF_ENABLED" = "true"
+          test ! -e runtime/r11-batch3-public-safe/cumulative-manifest.json
+          test ! -e runtime/r11-batch3-public-safe/collection-receipt.json
