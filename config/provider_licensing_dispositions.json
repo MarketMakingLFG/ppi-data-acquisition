@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0.0",
+  "contract_id": "PPI-R11-PUBLIC-ACQUISITION-003-R1",
+  "public_repository": "spoudel2010-ux/ppi-data-acquisition",
+  "public_raw_artifact_policy": "public_storage_prohibited",
+  "private_handoff_repository": "musksuman3/ai-signal-engine",
+  "private_handoff_repository_id": 1290626648,
+  "dispositions": [
+    {
+      "provider": "alpha_vantage",
+      "operation": "EARNINGS_ESTIMATES",
+      "disposition": "private_repository_handoff",
+      "public_retention": "hash_and_metadata_only"
+    },
+    {
+      "provider": "alpha_vantage",
+      "operation": "NEWS_SENTIMENT",
+      "disposition": "private_repository_handoff",
+      "public_retention": "hash_and_metadata_only"
+    },
+    {
+      "provider": "marketdata",
+      "operation": "daily_candles",
+      "disposition": "private_repository_handoff",
+      "public_retention": "hash_and_metadata_only"
+    },
+    {
+      "provider": "marketdata",
+      "operation": "option_chain",
+      "disposition": "private_repository_handoff",
+      "public_retention": "hash_and_metadata_only"
+    }
+  ],
+  "failure_behavior": "fail_closed",
+  "authorized_actions": []
+}
