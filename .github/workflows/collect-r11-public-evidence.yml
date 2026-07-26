@@ -39,6 +39,15 @@ jobs:
           ref: main
           persist-credentials: false
 
+      - name: Install pinned public expectation client
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input 'yfinance==1.5.1'
+          python - <<'PY'
+          import yfinance
+          assert yfinance.__version__ == '1.5.1'
+          PY
+
       - name: Validate exact public boundary and secrets
         env:
           PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
@@ -59,7 +68,11 @@ jobs:
               *) echo "Invalid request_id" >&2; exit 1 ;;
             esac
           fi
-          python -m py_compile src/collect_raw_provider_evidence.py src/publish_private_handoff.py
+          python -m py_compile \
+            src/collect_raw_provider_evidence.py \
+            src/collect_raw_provider_evidence_r2.py \
+            src/fetch_yfinance_expectations.py \
+            src/publish_private_handoff.py
           python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Collect exactly 48 bundles and 50 package paths
@@ -70,7 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$OUTPUT_ROOT" "$SAFE_ROOT" "$FAILURE_ROOT"
-          python src/collect_raw_provider_evidence.py \
+          python src/collect_raw_provider_evidence_r2.py \
             --scope config/r11_batch_003.json \
             --output-root "$OUTPUT_ROOT" \
             --request-id "$REQUEST_ID" \
