@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "contract_id": "PPI-PUBLIC-COLLECTOR-003-R2",
+  "status": "frozen",
+  "supersedes": "PPI-PUBLIC-COLLECTOR-003-R1",
+  "revision_reason": "Move expectation snapshots to the pinned public Yahoo/yfinance helper so Alpha Vantage is limited to twelve NEWS_SENTIMENT requests per batch.",
+  "repository": "spoudel2010-ux/ppi-data-acquisition",
+  "repository_id": 1312286476,
+  "source_binding": {
+    "method": "runtime_head_sha_and_receipt_hashes",
+    "required_branch": "main",
+    "collector_entrypoint_path": "src/collect_raw_provider_evidence_r2.py",
+    "collector_implementation_path": "src/collect_raw_provider_evidence.py",
+    "expectation_helper_path": "src/fetch_yfinance_expectations.py",
+    "handoff_path": "src/publish_private_handoff.py",
+    "workflow_path": ".github/workflows/collect-r11-public-evidence.yml",
+    "scope_path": "config/r11_batch_003.json",
+    "licensing_path": "config/provider_licensing_dispositions.json"
+  },
+  "provider_operations": [
+    "yahoo_finance_via_yfinance:expectation_history",
+    "alpha_vantage:NEWS_SENTIMENT",
+    "marketdata:daily_candles",
+    "marketdata:option_chain"
+  ],
+  "pinned_yfinance_version": "1.5.1",
+  "alpha_vantage_batch_request_count": 12,
+  "benchmark": "QQQ",
+  "expected_provider_request_count": 49,
+  "expected_bundle_count": 48,
+  "expected_path_count": 50,
+  "public_raw_artifact_uploaded": false,
+  "private_release_handoff": true,
+  "authorized_actions": []
+}
