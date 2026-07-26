@@ -1,20 +1,22 @@
 {
   "schema_version": "1.0.0",
-  "contract_id": "PPI-R11-PUBLIC-ACQUISITION-003-R1",
+  "contract_id": "PPI-R11-PUBLIC-ACQUISITION-003-R2",
   "public_repository": "spoudel2010-ux/ppi-data-acquisition",
   "public_raw_artifact_policy": "public_storage_prohibited",
   "private_handoff_repository": "musksuman3/ai-signal-engine",
   "private_handoff_repository_id": 1290626648,
   "dispositions": [
     {
-      "provider": "alpha_vantage",
-      "operation": "EARNINGS_ESTIMATES",
+      "provider": "yahoo_finance_via_yfinance",
+      "operation": "expectation_history",
+      "package_version": "1.5.1",
       "disposition": "private_repository_handoff",
       "public_retention": "hash_and_metadata_only"
     },
     {
       "provider": "alpha_vantage",
       "operation": "NEWS_SENTIMENT",
+      "maximum_batch_requests": 12,
       "disposition": "private_repository_handoff",
       "public_retention": "hash_and_metadata_only"
     },
