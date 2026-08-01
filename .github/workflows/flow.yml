@@ -1,0 +1,25 @@
+name: Create R2 attestation remediation branch
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out producer repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RAW_TOKEN }}
+          persist-credentials: true
+
+      - name: Create remediation branch
+        env:
+          GH_TOKEN: ${{ secrets.RAW_TOKEN }}
+        run: |
+          set -euo pipefail
+          git switch -c codex/ppi-r11-r2-provenance-attestation
+          git push origin HEAD
