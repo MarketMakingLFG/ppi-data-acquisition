@@ -1,4 +1,4 @@
-name: Add R2 producer attestation CI
+name: Mark R2 producer attestation PR ready
 
 on:
   workflow_dispatch:
@@ -7,43 +7,26 @@ permissions:
   contents: read
 
 jobs:
-  patch:
+  ready:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out remediation branch
-        uses: actions/checkout@v4
-        with:
-          ref: codex/ppi-r11-r2-provenance-attestation
-          token: ${{ secrets.RAW_TOKEN }}
-          persist-credentials: true
-
-      - name: Add or refresh focused PR validation
-        env:
-          CI_WORKFLOW_B64: bmFtZTogVmFsaWRhdGUgUjExIHByb2R1Y2VyIGF0dGVzdGF0aW9uIHJlbWVkaWF0aW9uCgpvbjoKICBwdWxsX3JlcXVlc3Q6CiAgICBicmFuY2hlczoKICAgICAgLSBtYWluCiAgICBwYXRoczoKICAgICAgLSAnLmdpdGh1Yi93b3JrZmxvd3MvY29sbGVjdC1yMTEtcHVibGljLWV2aWRlbmNlLnltbCcKICAgICAgLSAnc3JjL3B1Ymxpc2hfcHJpdmF0ZV9oYW5kb2ZmLnB5JwogICAgICAtICdzcmMvcHVibGlzaF9wcmVwYXJlZF9wcml2YXRlX2hhbmRvZmYucHknCiAgICAgIC0gJ3Rlc3RzL3Rlc3RfYXR0ZXN0ZWRfcHJpdmF0ZV9oYW5kb2ZmX3dvcmtmbG93LnB5JwogICAgICAtICcuZ2l0aHViL3dvcmtmbG93cy92YWxpZGF0ZS1yMTEtcHJvZHVjZXItYXR0ZXN0YXRpb24ueW1sJwogIHdvcmtmbG93X2Rpc3BhdGNoOgoKcGVybWlzc2lvbnM6CiAgY29udGVudHM6IHJlYWQKCmpvYnM6CiAgZm9jdXNlZC12YWxpZGF0aW9uOgogICAgcnVucy1vbjogdWJ1bnR1LTI0LjA0CiAgICB0aW1lb3V0LW1pbnV0ZXM6IDEwCiAgICBzdGVwczoKICAgICAgLSBuYW1lOiBDaGVjayBvdXQgZXhhY3QgdGVzdGVkIGNvbW1pdAogICAgICAgIHVzZXM6IGFjdGlvbnMvY2hlY2tvdXRAMTFiZDcxOTAxYmJlNWIxNjMwY2VlYTczZDI3NTk3MzY0YzlhZjY4MyAjIHY0LjIuMgogICAgICAgIHdpdGg6CiAgICAgICAgICBwZXJzaXN0LWNyZWRlbnRpYWxzOiBmYWxzZQoKICAgICAgLSBuYW1lOiBDb21waWxlIHByb2R1Y2VyIGhhbmRvZmYgY29kZQogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldW8gcGlwZWZhaWwKICAgICAgICAgIHB5dGhvbiAtbSBweV9jb21waWxlICAgICAgICAgICAgIHNyYy9wdWJsaXNoX3ByaXZhdGVfaGFuZG9mZi5weSAgICAgICAgICAgICBzcmMvcHVibGlzaF9wcmVwYXJlZF9wcml2YXRlX2hhbmRvZmYucHkKCiAgICAgIC0gbmFtZTogUnVuIGZvY3VzZWQgYXR0ZXN0YXRpb24gdGVzdHMKICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZXVvIHBpcGVmYWlsCiAgICAgICAgICBweXRob24gLW0gdW5pdHRlc3QgdGVzdHMudGVzdF9hdHRlc3RlZF9wcml2YXRlX2hhbmRvZmZfd29ya2Zsb3cgLXYKCiAgICAgIC0gbmFtZTogVmVyaWZ5IGltbXV0YWJsZSBhY3Rpb24gYW5kIG9yZGVyaW5nCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWV1byBwaXBlZmFpbAogICAgICAgICAgcHl0aG9uIC0gPDwnUFknCiAgICAgICAgICBmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKCiAgICAgICAgICB3b3JrZmxvdyA9IFBhdGgoIi5naXRodWIvd29ya2Zsb3dzL2NvbGxlY3QtcjExLXB1YmxpYy1ldmlkZW5jZS55bWwiKS5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKICAgICAgICAgIHByZXBhcmUgPSAicHl0aG9uIHNyYy9wdWJsaXNoX3ByZXBhcmVkX3ByaXZhdGVfaGFuZG9mZi5weSBwcmVwYXJlIgogICAgICAgICAgYXR0ZXN0ID0gInVzZXM6IGFjdGlvbnMvYXR0ZXN0QDU5ZDg5NDIxYWY5M2E4OTcwMjZjNzM1ODYwYmYyMWI2ZWI0ZjdiMjYiCiAgICAgICAgICBwdWJsaXNoID0gInB5dGhvbiBzcmMvcHVibGlzaF9wcmVwYXJlZF9wcml2YXRlX2hhbmRvZmYucHkgcHVibGlzaCIKCiAgICAgICAgICBhc3NlcnQgcHJlcGFyZSBpbiB3b3JrZmxvdwogICAgICAgICAgYXNzZXJ0IGF0dGVzdCBpbiB3b3JrZmxvdwogICAgICAgICAgYXNzZXJ0IHB1Ymxpc2ggaW4gd29ya2Zsb3cKICAgICAgICAgIGFzc2VydCB3b3JrZmxvdy5pbmRleChwcmVwYXJlKSA8IHdvcmtmbG93LmluZGV4KGF0dGVzdCkgPCB3b3JrZmxvdy5pbmRleChwdWJsaXNoKQogICAgICAgICAgUFkK
-        run: |
-          set -euo pipefail
-          printf '%s' "$CI_WORKFLOW_B64" | base64 --decode             > .github/workflows/validate-r11-producer-attestation.yml
-
-      - name: Validate workflow source and focused tests
-        run: |
-          set -euo pipefail
-          python -m py_compile             src/publish_private_handoff.py             src/publish_prepared_private_handoff.py
-          python -m unittest tests.test_attested_private_handoff_workflow -v
-          grep -F 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683'             .github/workflows/validate-r11-producer-attestation.yml
-          grep -F 'actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26'             .github/workflows/collect-r11-public-evidence.yml
-
-      - name: Commit and push CI definition
+      - name: Mark PR #5 ready for review
         env:
           GH_TOKEN: ${{ secrets.RAW_TOKEN }}
         run: |
           set -euo pipefail
-          git config user.name "ppi-r11-remediation"
-          git config user.email "ppi-r11-remediation@users.noreply.github.com"
-          git add .github/workflows/validate-r11-producer-attestation.yml
-          git diff --cached --check
-          if git diff --cached --quiet; then
-            echo "Focused CI definition already current"
+
+          state="$(
+            gh pr view 5 \
+              --repo spoudel2010-ux/ppi-data-acquisition \
+              --json isDraft \
+              --jq '.isDraft'
+          )"
+
+          if [ "$state" = "false" ]; then
+            echo "PR #5 is already ready for review"
             exit 0
           fi
-          git commit -m "Add focused CI for producer attestation gate"
-          git push origin HEAD:codex/ppi-r11-r2-provenance-attestation
+
+          gh pr ready 5 \
+            --repo spoudel2010-ux/ppi-data-acquisition
