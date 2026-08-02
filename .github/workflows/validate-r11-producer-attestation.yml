@@ -1,0 +1,53 @@
+name: Validate R11 producer attestation remediation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/collect-r11-public-evidence.yml'
+      - 'src/publish_private_handoff.py'
+      - 'src/publish_prepared_private_handoff.py'
+      - 'tests/test_attested_private_handoff_workflow.py'
+      - '.github/workflows/validate-r11-producer-attestation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact tested commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Compile producer handoff code
+        run: |
+          set -euo pipefail
+          python -m py_compile             src/publish_private_handoff.py             src/publish_prepared_private_handoff.py
+
+      - name: Run focused attestation tests
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_attested_private_handoff_workflow -v
+
+      - name: Verify immutable action and ordering
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/collect-r11-public-evidence.yml").read_text(encoding="utf-8")
+          prepare = "python src/publish_prepared_private_handoff.py prepare"
+          attest = "uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26"
+          publish = "python src/publish_prepared_private_handoff.py publish"
+
+          assert prepare in workflow
+          assert attest in workflow
+          assert publish in workflow
+          assert workflow.index(prepare) < workflow.index(attest) < workflow.index(publish)
+          PY
