@@ -51,3 +51,52 @@ jobs:
           fi
           git commit -m "Add producer provenance attestation gate"
           git push origin HEAD:codex/ppi-r11-r2-provenance-attestation
+
+      - name: Open draft remediation PR
+        env:
+          GH_TOKEN: ${{ secrets.RAW_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          existing="$(
+            gh pr list \
+              --repo spoudel2010-ux/ppi-data-acquisition \
+              --head codex/ppi-r11-r2-provenance-attestation \
+              --base main \
+              --state all \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already exists"
+            exit 0
+          fi
+
+          gh pr create \
+            --repo spoudel2010-ux/ppi-data-acquisition \
+            --base main \
+            --head codex/ppi-r11-r2-provenance-attestation \
+            --draft \
+            --title "Add producer provenance attestation gate for R11 batch-3 R2" \
+            --body-file - <<'PR_BODY'
+          ## Summary
+
+          Adds fail-closed provenance generation for the exact deterministic
+          R11 batch-3 private handoff ZIP before publication.
+
+          ## Evidence
+
+          - commit: `b71eaa2eb5452034c886b3e8b7d3393625a0ccdb`
+          - remediation run: `30756947707`
+          - job: `91520633834`
+          - focused tests:
+            - `test_attestation_precedes_publication`
+            - `test_digest_and_attestation_are_required`
+
+          ## Safety boundary
+
+          This PR does not execute acquisition, publish a package, dispatch the
+          private repository, mutate registries, enable downstream authority,
+          or merge itself.
+          PR_BODY
