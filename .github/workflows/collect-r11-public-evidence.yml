@@ -14,6 +14,9 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: ppi-r11-public-provider-evidence
@@ -72,7 +75,8 @@ jobs:
             src/collect_raw_provider_evidence.py \
             src/collect_raw_provider_evidence_r2.py \
             src/fetch_yfinance_expectations.py \
-            src/publish_private_handoff.py
+            src/publish_private_handoff.py \
+            src/publish_prepared_private_handoff.py
           python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Collect exactly 48 bundles and 50 package paths
@@ -114,15 +118,32 @@ jobs:
                       assert secret not in payload, f"credential leaked into {path}"
           PY
 
-      - name: Publish exact package to private release
+      - name: Prepare exact package for provenance attestation
+        run: |
+          set -euo pipefail
+          python src/publish_prepared_private_handoff.py prepare \
+            --package-root "$OUTPUT_ROOT" \
+            --archive "$RUNNER_TEMP/ppi-r11-private-handoff.zip" \
+            --summary "$SAFE_ROOT/private-handoff-preparation.json"
+
+      - name: Generate provenance for exact final ZIP
+        id: attest
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: '${{ runner.temp }}/ppi-r11-private-handoff.zip'
+
+      - name: Publish only the attested exact package
         env:
           PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
         run: |
           set -euo pipefail
-          python src/publish_private_handoff.py \
+          python src/publish_prepared_private_handoff.py publish \
             --package-root "$OUTPUT_ROOT" \
             --archive "$RUNNER_TEMP/ppi-r11-private-handoff.zip" \
-            --summary "$SAFE_ROOT/private-handoff-summary.json"
+            --preparation-summary "$SAFE_ROOT/private-handoff-preparation.json" \
+            --summary "$SAFE_ROOT/private-handoff-summary.json" \
+            --attestation-id "${{ steps.attest.outputs.attestation-id }}" \
+            --attestation-url "${{ steps.attest.outputs.attestation-url }}"
 
       - name: Build public safe success receipt
         run: |
@@ -144,6 +165,9 @@ jobs:
               "private_release_tag": source["private_release_tag"],
               "private_asset_name": source["private_asset_name"],
               "private_asset_sha256": source["private_asset_sha256"],
+              "github_attestation_id": source["github_attestation_id"],
+              "github_attestation_url": source["github_attestation_url"],
+              "attestation_verified_before_publication": source["attestation_verified_before_publication"],
               "public_raw_artifact_uploaded": False,
               "private_repository_dispatched": False,
               "authorized_actions": [],
