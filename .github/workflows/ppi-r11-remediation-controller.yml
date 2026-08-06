@@ -1,0 +1,160 @@
+name: PPI R11 remediation controller
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: ppi-r11-remediation-controller
+  cancel-in-progress: false
+
+env:
+  REMEDIATION_BRANCH: codex/ppi-r11-r2-provenance-attestation
+  BASE_BRANCH: main
+  FOCUSED_WORKFLOW: validate-r11-producer-attestation.yml
+  PR_TITLE: Add producer provenance attestation gate for R11 batch-3 R2
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Reconcile PR and validate exact remediation head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          head_sha="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPOSITORY}/branches/${REMEDIATION_BRANCH}" \
+              --jq '.commit.sha'
+          )"
+
+          test "$head_sha" != "null"
+          test -n "$head_sha"
+
+          pr_number="$(
+            gh pr list \
+              --repo "$REPOSITORY" \
+              --head "$REMEDIATION_BRANCH" \
+              --base "$BASE_BRANCH" \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -z "$pr_number" ]; then
+            gh pr create \
+              --repo "$REPOSITORY" \
+              --base "$BASE_BRANCH" \
+              --head "$REMEDIATION_BRANCH" \
+              --draft \
+              --title "$PR_TITLE" \
+              --body-file - <<'EOF'
+          ## Summary
+
+          Adds fail-closed provenance generation for the exact deterministic
+          R11 batch-3 private handoff ZIP before publication.
+
+          ## Automation boundary
+
+          Repository-native automation may run secret-free focused validation
+          and manage draft/ready state. It must not merge, execute acquisition,
+          publish packages, dispatch private analysis, mutate registries, or
+          enable downstream authority.
+          EOF
+
+            pr_number="$(
+              gh pr list \
+                --repo "$REPOSITORY" \
+                --head "$REMEDIATION_BRANCH" \
+                --base "$BASE_BRANCH" \
+                --state open \
+                --json number \
+                --jq '.[0].number'
+            )"
+          fi
+
+          dispatch_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          gh workflow run "$FOCUSED_WORKFLOW" \
+            --repo "$REPOSITORY" \
+            --ref "$BASE_BRANCH" \
+            -f expected_sha="$head_sha"
+
+          run_id=""
+          status=""
+          conclusion=""
+
+          for _ in $(seq 1 36); do
+            sleep 10
+
+            run="$(
+              gh run list \
+                --repo "$REPOSITORY" \
+                --workflow "$FOCUSED_WORKFLOW" \
+                --branch "$BASE_BRANCH" \
+                --event workflow_dispatch \
+                --limit 20 \
+                --json databaseId,status,conclusion,createdAt \
+                --jq --arg started "$dispatch_started" '
+                  map(select(.createdAt >= $started))
+                  | sort_by(.createdAt)
+                  | reverse
+                  | .[0] // {}
+                '
+            )"
+
+            run_id="$(jq -r '.databaseId // ""' <<<"$run")"
+            status="$(jq -r '.status // ""' <<<"$run")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$run")"
+
+            if [ -n "$run_id" ] && [ "$status" = "completed" ]; then
+              break
+            fi
+          done
+
+          is_draft="$(
+            gh pr view "$pr_number" \
+              --repo "$REPOSITORY" \
+              --json isDraft \
+              --jq '.isDraft'
+          )"
+
+          if [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
+            if [ "$is_draft" = "true" ]; then
+              gh pr ready "$pr_number" --repo "$REPOSITORY"
+            fi
+            echo "PR #${pr_number} is ready; exact head ${head_sha} passed run ${run_id}."
+          else
+            if [ "$is_draft" = "false" ]; then
+              gh pr ready "$pr_number" --repo "$REPOSITORY" --undo
+            fi
+            echo "PR #${pr_number} is draft; exact head ${head_sha} did not pass."
+            test "$status" = "completed"
+            test "$conclusion" = "success"
+          fi
+
+      - name: Write controller summary
+        if: always()
+        run: |
+          {
+            echo "## PPI R11 remediation controller"
+            echo
+            echo "- Remediation branch: \`${REMEDIATION_BRANCH}\`"
+            echo "- Base branch: \`${BASE_BRANCH}\`"
+            echo "- Merge performed: \`false\`"
+            echo "- Acquisition executed: \`false\`"
+            echo "- Publication executed: \`false\`"
+          } >> "$GITHUB_STEP_SUMMARY"

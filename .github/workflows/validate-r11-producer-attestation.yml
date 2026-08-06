@@ -5,30 +5,71 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/collect-r11-public-evidence.yml'
-      - 'src/publish_private_handoff.py'
-      - 'src/publish_prepared_private_handoff.py'
-      - 'tests/test_attested_private_handoff_workflow.py'
-      - '.github/workflows/validate-r11-producer-attestation.yml'
+      - ".github/workflows/collect-r11-public-evidence.yml"
+      - ".github/workflows/validate-r11-producer-attestation.yml"
+      - "src/publish_private_handoff.py"
+      - "src/publish_prepared_private_handoff.py"
+      - "tests/test_attested_private_handoff_workflow.py"
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Exact remediation SHA to test"
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: r11-producer-attestation-${{ inputs.expected_sha || github.event.pull_request.head.sha || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   focused-validation:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+
     steps:
+      - name: Resolve exact tested SHA
+        id: target
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DISPATCH_SHA: ${{ inputs.expected_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            target_sha="$PR_HEAD_SHA"
+          else
+            target_sha="$DISPATCH_SHA"
+          fi
+
+          if ! [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid exact SHA" >&2
+            exit 1
+          fi
+
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+
       - name: Check out exact tested commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ steps.target.outputs.sha }}
           persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify checkout identity
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ steps.target.outputs.sha }}"
 
       - name: Compile producer handoff code
         run: |
           set -euo pipefail
-          python -m py_compile             src/publish_private_handoff.py             src/publish_prepared_private_handoff.py
+          python -m py_compile \
+            src/publish_private_handoff.py \
+            src/publish_prepared_private_handoff.py
 
       - name: Run focused attestation tests
         run: |
@@ -41,13 +82,77 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          workflow = Path(".github/workflows/collect-r11-public-evidence.yml").read_text(encoding="utf-8")
+          workflow = Path(
+              ".github/workflows/collect-r11-public-evidence.yml"
+          ).read_text(encoding="utf-8")
+
           prepare = "python src/publish_prepared_private_handoff.py prepare"
-          attest = "uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26"
+          attest = (
+              "uses: actions/attest@"
+              "59d89421af93a897026c735860bf21b6eb4f7b26"
+          )
           publish = "python src/publish_prepared_private_handoff.py publish"
 
-          assert prepare in workflow
-          assert attest in workflow
-          assert publish in workflow
-          assert workflow.index(prepare) < workflow.index(attest) < workflow.index(publish)
+          for required in (
+              "id-token: write",
+              "attestations: write",
+              "artifact-metadata: write",
+              prepare,
+              attest,
+              publish,
+          ):
+              if required not in workflow:
+                  raise SystemExit(f"missing workflow control: {required}")
+
+          if not workflow.index(prepare) < workflow.index(attest) < workflow.index(publish):
+              raise SystemExit("prepare-attest-publish ordering is invalid")
           PY
+
+      - name: Verify fail-closed digest and authority controls
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path(
+              "src/publish_prepared_private_handoff.py"
+          ).read_text(encoding="utf-8")
+
+          for required in (
+              "prepared archive digest changed after attestation",
+              "prepared archive size changed after attestation",
+              "GitHub attestation ID is missing",
+              "GitHub attestation URL is invalid",
+              '"registry_mutation_authorized": False',
+              '"production_authorized": False',
+              '"publication_authorized": False',
+              '"trading_authorized": False',
+              '"r12_authorized": False',
+              '"authorized_actions": []',
+          ):
+              if required not in source:
+                  raise SystemExit(f"missing fail-closed control: {required}")
+          PY
+
+      - name: Confirm no repository secrets were supplied
+        run: |
+          set -euo pipefail
+          for name in RAW_TOKEN GH_TOKEN PPI_PRIVATE_HANDOFF_TOKEN
+          do
+            if [ -n "${!name:-}" ]; then
+              echo "unexpected credential variable: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Write validation summary
+        if: always()
+        run: |
+          {
+            echo "## R11 producer attestation validation"
+            echo
+            echo "- Exact SHA: \`${{ steps.target.outputs.sha }}\`"
+            echo "- Acquisition executed: \`false\`"
+            echo "- Publication executed: \`false\`"
+            echo "- Repository secrets supplied: \`false\`"
+          } >> "$GITHUB_STEP_SUMMARY"
