@@ -41,8 +41,32 @@ jobs:
               --jq '.commit.sha'
           )"
 
-          test "$head_sha" != "null"
+          base_sha="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPOSITORY}/branches/${BASE_BRANCH}" \
+              --jq '.commit.sha'
+          )"
+
           test -n "$head_sha"
+          test -n "$base_sha"
+
+          if [ "$head_sha" = "$base_sha" ]; then
+            echo "No remediation commits differ from ${BASE_BRANCH}; nothing to reconcile."
+            exit 0
+          fi
+
+          ahead_by="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPOSITORY}/compare/${BASE_BRANCH}...${REMEDIATION_BRANCH}" \
+              --jq '.ahead_by'
+          )"
+
+          if [ "$ahead_by" -eq 0 ]; then
+            echo "Remediation branch is not ahead of ${BASE_BRANCH}; nothing to reconcile."
+            exit 0
+          fi
 
           pr_number="$(
             gh pr list \
