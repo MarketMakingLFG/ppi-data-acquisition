@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: Reconcile PR and validate exact remediation head
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.AI_TRADING_WORKFLOW }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
@@ -61,7 +61,7 @@ jobs:
               --head "$REMEDIATION_BRANCH" \
               --draft \
               --title "$PR_TITLE" \
-              --body-file - <<'EOF'
+              --body-file - <<'PR_BODY'
           ## Summary
 
           Adds fail-closed provenance generation for the exact deterministic
@@ -73,7 +73,7 @@ jobs:
           and manage draft/ready state. It must not merge, execute acquisition,
           publish packages, dispatch private analysis, mutate registries, or
           enable downstream authority.
-          EOF
+          PR_BODY
 
             pr_number="$(
               gh pr list \
