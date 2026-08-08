@@ -79,7 +79,7 @@ jobs:
             src/publish_prepared_private_handoff.py
           python -m unittest discover -s tests -p "test_*.py" -v
 
-      - name: Collect exactly 48 bundles and 50 package paths
+      - name: Collect four deterministic shards into exactly 48 bundles and 50 package paths
         id: collect
         env:
           PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
@@ -91,7 +91,8 @@ jobs:
             --scope config/r11_batch_003.json \
             --output-root "$OUTPUT_ROOT" \
             --request-id "$REQUEST_ID" \
-            --failure-output "$FAILURE_ROOT/failure-diagnostics.json"
+            --failure-output "$FAILURE_ROOT/failure-diagnostics.json" \
+            --shard-receipt-output "$SAFE_ROOT/shard-resume-receipt.json"
 
       - name: Confirm secrets are absent from retained package
         env:
