@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   id-token: write
   attestations: write
   artifact-metadata: write
@@ -27,6 +28,7 @@ env:
   OUTPUT_ROOT: runtime/r11-batch3-private-package
   SAFE_ROOT: runtime/r11-batch3-public-safe
   FAILURE_ROOT: runtime/r11-batch3-failure
+  CHECKPOINT_ROOT: runtime/r11-batch3-private-checkpoint
   CONFIRMATION: ${{ inputs.confirmation }}
   REQUEST_ID: ${{ inputs.request_id }}
 
@@ -74,25 +76,50 @@ jobs:
           python -m py_compile \
             src/collect_raw_provider_evidence.py \
             src/collect_raw_provider_evidence_r2.py \
+            src/run_resumable_r2.py \
+            src/private_checkpoint_store.py \
+            src/scan_job_log.py \
             src/fetch_yfinance_expectations.py \
             src/publish_private_handoff.py \
             src/publish_prepared_private_handoff.py
           python -m unittest discover -s tests -p "test_*.py" -v
 
-      - name: Collect four deterministic shards into exactly 48 bundles and 50 package paths
+      - name: Restore prior-attempt checkpoint from private storage
+        env:
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTPUT_ROOT" "$SAFE_ROOT" "$FAILURE_ROOT" "$CHECKPOINT_ROOT"
+          python src/private_checkpoint_store.py restore \
+            --output "$CHECKPOINT_ROOT/prior.json"
+
+      - name: Collect or reuse four verified deterministic shards
         id: collect
         env:
           PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
           PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
         run: |
           set -euo pipefail
-          mkdir -p "$OUTPUT_ROOT" "$SAFE_ROOT" "$FAILURE_ROOT"
-          python src/collect_raw_provider_evidence_r2.py \
+          python src/run_resumable_r2.py \
             --scope config/r11_batch_003.json \
             --output-root "$OUTPUT_ROOT" \
             --request-id "$REQUEST_ID" \
             --failure-output "$FAILURE_ROOT/failure-diagnostics.json" \
-            --shard-receipt-output "$SAFE_ROOT/shard-resume-receipt.json"
+            --shard-receipt-output "$SAFE_ROOT/shard-resume-receipt.json" \
+            --checkpoint-input "$CHECKPOINT_ROOT/prior.json" \
+            --checkpoint-output "$CHECKPOINT_ROOT/current.json"
+
+      - name: Persist resumability checkpoint privately
+        if: always()
+        env:
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -f "$CHECKPOINT_ROOT/current.json" ]; then
+            python src/private_checkpoint_store.py publish \
+              --checkpoint "$CHECKPOINT_ROOT/current.json" \
+              --receipt "$SAFE_ROOT/private-checkpoint-persistence.json"
+          fi
 
       - name: Confirm secrets are absent from retained package
         env:
@@ -179,6 +206,15 @@ jobs:
           path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
 
+      - name: Delete temporary private checkpoints after successful handoff
+        if: success()
+        env:
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python src/private_checkpoint_store.py cleanup \
+            --receipt "$SAFE_ROOT/private-checkpoint-cleanup.json"
+
       - name: Retain public safe success metadata
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -204,3 +240,55 @@ jobs:
           test "$PRIVATE_RELEASE_HANDOFF_ENABLED" = "true"
           test ! -e runtime/r11-batch3-public-safe/cumulative-manifest.json
           test ! -e runtime/r11-batch3-public-safe/collection-receipt.json
+          test ! -e runtime/r11-batch3-public-safe/current.json
+
+  scan-job-log:
+    name: scan completed producer job log
+    needs: collect-and-handoff
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    env:
+      LOG_SAFE_ROOT: runtime/r11-batch3-job-log-scan
+    steps:
+      - name: Check out approved log scanner
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Download completed collect job log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$LOG_SAFE_ROOT"
+          jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs?per_page=100")"
+          job_id="$(jq -r '.jobs[] | select(.name == "collect-and-handoff") | .id' <<<"$jobs_json")"
+          test -n "$job_id"
+          test "$job_id" != "null"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" > "$RUNNER_TEMP/collect-and-handoff.log"
+          test -s "$RUNNER_TEMP/collect-and-handoff.log"
+
+      - name: Scan exact completed job log for credential leakage
+        env:
+          PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+          PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python src/scan_job_log.py \
+            --log "$RUNNER_TEMP/collect-and-handoff.log" \
+            --output "$LOG_SAFE_ROOT/job-log-scan-receipt.json"
+
+      - name: Retain safe job-log scan receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ppi-r11-public-job-log-scan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/r11-batch3-job-log-scan/
+          retention-days: 30
+          if-no-files-found: warn
