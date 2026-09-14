@@ -14,15 +14,9 @@ class PublicBoundaryTests(unittest.TestCase):
         self.assertEqual(scope["private_contract_id"], "PPI-R11-BATCH-EVIDENCE-003-R1")
         self.assertEqual(scope["collector_release_id"], "PPI-PUBLIC-COLLECTOR-003-R2")
         self.assertEqual(scope["batch_sequence"], 3)
-        self.assertEqual(
-            scope["cumulative_tickers"],
-            ["AAPL", "MU", "NVDA", "AMD", "AVGO", "INTC", "TSM", "ARM", "QCOM", "MRVL", "GFS", "TXN"],
-        )
+        self.assertEqual(scope["cumulative_tickers"], ["AAPL", "MU", "NVDA", "AMD", "AVGO", "INTC", "TSM", "ARM", "QCOM", "MRVL", "GFS", "TXN"])
         self.assertEqual(scope["new_candidate_tickers"], ["QCOM", "MRVL", "GFS", "TXN"])
-        self.assertEqual(
-            scope["categories"],
-            ["expectation_history", "independent_recognition", "market_time_series", "specialized_contract_data"],
-        )
+        self.assertEqual(scope["categories"], ["expectation_history", "independent_recognition", "market_time_series", "specialized_contract_data"])
         self.assertEqual(scope["expectation_provider"], "yahoo_finance_via_yfinance")
         self.assertEqual(scope["pinned_yfinance_version"], "1.5.1")
         self.assertEqual(scope["expected_alpha_vantage_request_count"], 12)
@@ -53,29 +47,14 @@ class PublicBoundaryTests(unittest.TestCase):
         self.assertNotIn("actions/checkout@v", text)
         self.assertNotIn("actions/upload-artifact@v", text)
         self.assertNotIn("runtime/r11-batch3-private-package/", text.split("Retain public safe success metadata", 1)[1])
-        for forbidden in (
-            "contents:" + " write",
-            "actions:" + " write",
-            "pull-requests:" + " write",
-            "git " + "push",
-            "gh pr " + "create",
-            "gh pr " + "merge",
-        ):
+        for forbidden in ("contents:" + " write", "actions:" + " write", "pull-requests:" + " write", "git " + "push", "gh pr " + "create", "gh pr " + "merge"):
             self.assertNotIn(forbidden, text)
 
     def test_collector_keeps_calculation_private_and_limits_alpha_calls(self) -> None:
         text = (ROOT / "src/collect_raw_provider_evidence.py").read_text(encoding="utf-8")
         entrypoint = (ROOT / "src/collect_raw_provider_evidence_r2.py").read_text(encoding="utf-8")
         lowered = text.lower()
-        for forbidden in (
-            "relative_strength",
-            "sma_50",
-            "average_volume_20",
-            "entity_return_20",
-            "countability",
-            "registry append",
-            "place_order",
-        ):
+        for forbidden in ("relative_strength", "sma_50", "average_volume_20", "entity_return_20", "countability", "registry append", "place_order"):
             self.assertNotIn(forbidden, lowered)
         self.assertIn('"provider": "yahoo_finance_via_yfinance"', text)
         self.assertIn('"function": "NEWS_SENTIMENT"', text)
@@ -96,6 +75,11 @@ class PublicBoundaryTests(unittest.TestCase):
     def test_private_handoff_does_not_dispatch_or_mutate_registry(self) -> None:
         text = (ROOT / "src/publish_private_handoff.py").read_text(encoding="utf-8")
         self.assertIn('PRIVATE_REPOSITORY = "musksuman3/ai-signal-engine"', text)
+        self.assertIn('PRODUCER_REPOSITORY = "MarketMakingLFG/ppi-data-acquisition"', text)
+        self.assertIn('PRODUCER_REPOSITORY_ID = 1312286476', text)
+        self.assertNotIn("spoudel2010-ux/ppi-data-acquisition", text)
+        self.assertIn('"producer_repository": PRODUCER_REPOSITORY', text)
+        self.assertIn('"producer_repository_id": PRODUCER_REPOSITORY_ID', text)
         self.assertIn('"private_repository_dispatched": False', text)
         self.assertIn('"registry_mutation_authorized": False', text)
         for forbidden in ("/dispatches", "gh pr ", "git push"):
