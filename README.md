@@ -10,7 +10,7 @@ The private repository receives one completed immutable artifact and performs on
 
 ## Stable identity
 
-- Repository: `spoudel2010-ux/ppi-data-acquisition`
+- Repository: `MarketMakingLFG/ppi-data-acquisition`
 - Repository ID: `1312286476`
 - Required visibility: public
 - Required default branch: `main`
@@ -29,7 +29,7 @@ Public source intelligence and reusable code:
 - source-health and compatibility checks;
 - versioned public collector releases and contracts.
 
-### `spoudel2010-ux/ppi-data-acquisition`
+### `MarketMakingLFG/ppi-data-acquisition`
 
 Public provider execution:
 
