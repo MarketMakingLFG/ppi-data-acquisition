@@ -35,6 +35,7 @@ env:
 jobs:
   collect-and-handoff:
     if: github.ref == 'refs/heads/main'
+    environment: r11-public-acquisition-protected
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -43,6 +44,20 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+
+      - name: Verify protected environment before provider access
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PPI_PROTECTION_APP_ID: ${{ vars.PPI_PROTECTION_APP_ID }}
+          PPI_PROTECTION_APP_SLUG: ${{ vars.PPI_PROTECTION_APP_SLUG }}
+          PPI_PROTECTION_APP_INDEPENDENT: ${{ vars.PPI_PROTECTION_APP_INDEPENDENT }}
+          PPI_ENVIRONMENT_CREDENTIALS_BOUND: ${{ vars.PPI_ENVIRONMENT_CREDENTIALS_BOUND }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$FAILURE_ROOT"
+          python src/scan_job_log.py \
+            --environment-preflight \
+            --output "$FAILURE_ROOT/protected-environment-preflight.json"
 
       - name: Install pinned public expectation client
         run: |
@@ -246,6 +261,7 @@ jobs:
     name: scan completed producer job log
     needs: collect-and-handoff
     if: always()
+    environment: r11-public-acquisition-protected
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -284,7 +300,23 @@ jobs:
             --log "$RUNNER_TEMP/collect-and-handoff.log" \
             --output "$LOG_SAFE_ROOT/job-log-scan-receipt.json"
 
-      - name: Retain safe job-log scan receipt
+      - name: Build protected environment receipt
+        if: success() && needs.collect-and-handoff.result == 'success'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COLLECT_JOB_RESULT: ${{ needs.collect-and-handoff.result }}
+          PPI_PROTECTION_APP_ID: ${{ vars.PPI_PROTECTION_APP_ID }}
+          PPI_PROTECTION_APP_SLUG: ${{ vars.PPI_PROTECTION_APP_SLUG }}
+          PPI_PROTECTION_APP_INDEPENDENT: ${{ vars.PPI_PROTECTION_APP_INDEPENDENT }}
+          PPI_ENVIRONMENT_CREDENTIALS_BOUND: ${{ vars.PPI_ENVIRONMENT_CREDENTIALS_BOUND }}
+        run: |
+          set -euo pipefail
+          python src/scan_job_log.py \
+            --environment-receipt \
+            --log-scan-receipt "$LOG_SAFE_ROOT/job-log-scan-receipt.json" \
+            --output "$LOG_SAFE_ROOT/protected-environment-receipt.json"
+
+      - name: Retain safe job-log and protected-environment receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

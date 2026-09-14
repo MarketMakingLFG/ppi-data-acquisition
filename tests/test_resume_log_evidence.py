@@ -196,6 +196,87 @@ class JobLogLeakTests(unittest.TestCase):
             self.scan_bytes(b"request completed\x1bXunexpected\n")
 
 
+class ProtectedEnvironmentEvidenceTests(unittest.TestCase):
+    def valid_environment(self) -> dict:
+        return {
+            "name": scan_job_log.EXPECTED_ENVIRONMENT,
+            "can_admins_bypass": False,
+            "deployment_branch_policy": {
+                "protected_branches": True,
+                "custom_branch_policies": False,
+            },
+        }
+
+    def valid_rules(self) -> dict:
+        return {
+            "custom_deployment_protection_rules": [
+                {"id": 71, "app": {"id": 9001, "slug": "ppi-independent-gate"}},
+            ]
+        }
+
+    def evaluate(self, environment=None, rules=None, **overrides):
+        kwargs = {
+            "expected_app_id": 9001,
+            "expected_app_slug": "ppi-independent-gate",
+            "app_independent": True,
+            "credentials_bound": True,
+        }
+        kwargs.update(overrides)
+        return scan_job_log.evaluate_environment_policy(
+            environment or self.valid_environment(),
+            rules or self.valid_rules(),
+            None,
+            **kwargs,
+        )
+
+    def test_valid_independent_custom_rule_is_accepted(self) -> None:
+        policy = self.evaluate()
+        self.assertEqual(policy["status"], "protected_environment_policy_ready")
+        self.assertEqual(policy["administrator_bypass"], "denied")
+        self.assertEqual(policy["protection_rule_id"], 71)
+        self.assertTrue(policy["environment_credentials_bound"])
+
+    def test_admin_bypass_is_rejected(self) -> None:
+        environment = self.valid_environment()
+        environment["can_admins_bypass"] = True
+        with self.assertRaises(scan_job_log.EnvironmentPolicyError):
+            self.evaluate(environment=environment)
+
+    def test_wrong_app_rule_is_rejected(self) -> None:
+        rules = {"custom_deployment_protection_rules": [{"id": 71, "app": {"id": 9999, "slug": "other"}}]}
+        with self.assertRaises(scan_job_log.EnvironmentPolicyError):
+            self.evaluate(rules=rules)
+
+    def test_missing_environment_credential_binding_is_rejected(self) -> None:
+        with self.assertRaises(scan_job_log.EnvironmentPolicyError):
+            self.evaluate(credentials_bound=False)
+
+    def test_receipt_matches_consumer_schema_shape(self) -> None:
+        policy = self.evaluate()
+        log_receipt = {"status": "pass", "logs_scanned": True}
+        workflow = """name: fixture\npermissions:\n  contents: read\njobs:\n  collect-and-handoff:\n    environment: r11-public-acquisition-protected\n"""
+        env = {
+            "COLLECT_JOB_RESULT": "success",
+            "GITHUB_REPOSITORY": scan_job_log.EXPECTED_REPOSITORY,
+            "GITHUB_REPOSITORY_ID": str(scan_job_log.EXPECTED_REPOSITORY_ID),
+            "GITHUB_SHA": HEAD_SHA,
+            "GITHUB_REF": scan_job_log.EXPECTED_SOURCE_REF,
+            "GITHUB_RUN_ID": str(RUN_ID),
+            "GITHUB_RUN_ATTEMPT": "2",
+        }
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, env, clear=False):
+            workflow_path = Path(tmp) / "workflow.yml"
+            workflow_path.write_text(workflow, encoding="utf-8")
+            receipt = scan_job_log.build_environment_receipt(policy, log_receipt, workflow_path=workflow_path)
+        self.assertEqual(receipt["schema_version"], "1.1.0")
+        self.assertEqual(receipt["approval_mode"], "custom_deployment_protection_rule")
+        self.assertEqual(receipt["protection_rule_decision"], "approved")
+        self.assertTrue(receipt["protection_rule_independent_of_producer"])
+        self.assertEqual(receipt["authorized_actions"], [])
+        for field in scan_job_log.FALSE_AUTHORITY_FIELDS:
+            self.assertIs(receipt[field], False)
+
+
 class WorkflowWiringTests(unittest.TestCase):
     def test_workflow_persists_private_checkpoint_and_scans_completed_job_log(self) -> None:
         text = (ROOT / ".github/workflows/collect-r11-public-evidence.yml").read_text(encoding="utf-8")
@@ -209,6 +290,16 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn("actions/jobs/${job_id}/logs", text)
         self.assertIn("gh api --allow-escape-sequences", text)
         self.assertNotIn("runtime/r11-batch3-private-checkpoint/", text.split("Retain public safe success metadata", 1)[1])
+
+    def test_protected_environment_preflight_precedes_provider_secret_step(self) -> None:
+        text = (ROOT / ".github/workflows/collect-r11-public-evidence.yml").read_text(encoding="utf-8")
+        self.assertEqual(text.count("environment: r11-public-acquisition-protected"), 2)
+        self.assertIn("--environment-preflight", text)
+        self.assertIn("--environment-receipt", text)
+        self.assertIn("protected-environment-receipt.json", text)
+        self.assertIn("PPI_PROTECTION_APP_ID", text)
+        self.assertIn("PPI_ENVIRONMENT_CREDENTIALS_BOUND", text)
+        self.assertLess(text.index("Verify protected environment before provider access"), text.index("Validate exact public boundary and secrets"))
 
 
 if __name__ == "__main__":
