@@ -17,6 +17,8 @@ API_ROOT = "https://api.github.com"
 UPLOAD_ROOT = "https://uploads.github.com"
 PRIVATE_REPOSITORY = "musksuman3/ai-signal-engine"
 PRIVATE_REPOSITORY_ID = 1290626648
+PRODUCER_REPOSITORY = "MarketMakingLFG/ppi-data-acquisition"
+PRODUCER_REPOSITORY_ID = 1312286476
 MAX_ARCHIVE_BYTES = 150_000_000
 EXPECTED_FILE_COUNT = 50
 
@@ -138,7 +140,7 @@ def ensure_release(tag: str, token: str, public_run_id: int, attempt: int, head_
             "name": f"PPI R11 public handoff {public_run_id} attempt {attempt}",
             "body": (
                 "Immutable private handoff from "
-                f"spoudel2010-ux/ppi-data-acquisition run {public_run_id} attempt {attempt}, "
+                f"{PRODUCER_REPOSITORY} (repository ID {PRODUCER_REPOSITORY_ID}) run {public_run_id} attempt {attempt}, "
                 f"head {head_sha}. No production, publication, broker, order, trading, MMM/raw-data, or R12 authority."
             ),
             "draft": False,
@@ -204,6 +206,8 @@ def main() -> int:
         "public_run_id": run_id,
         "public_run_attempt": attempt,
         "public_head_sha": head_sha,
+        "producer_repository": PRODUCER_REPOSITORY,
+        "producer_repository_id": PRODUCER_REPOSITORY_ID,
         "private_repository": PRIVATE_REPOSITORY,
         "private_repository_id": PRIVATE_REPOSITORY_ID,
         "private_release_id": int(release.get("id", 0) or 0),
