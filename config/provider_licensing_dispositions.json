@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "contract_id": "PPI-R11-PUBLIC-ACQUISITION-003-R2",
-  "public_repository": "spoudel2010-ux/ppi-data-acquisition",
+  "public_repository": "MarketMakingLFG/ppi-data-acquisition",
   "public_raw_artifact_policy": "public_storage_prohibited",
   "private_handoff_repository": "musksuman3/ai-signal-engine",
   "private_handoff_repository_id": 1290626648,
