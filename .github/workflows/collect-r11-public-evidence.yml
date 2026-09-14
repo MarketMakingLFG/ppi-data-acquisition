@@ -270,7 +270,7 @@ jobs:
           job_id="$(jq -r '.jobs[] | select(.name == "collect-and-handoff") | .id' <<<"$jobs_json")"
           test -n "$job_id"
           test "$job_id" != "null"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" > "$RUNNER_TEMP/collect-and-handoff.log"
+          gh api --allow-escape-sequences "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" > "$RUNNER_TEMP/collect-and-handoff.log"
           test -s "$RUNNER_TEMP/collect-and-handoff.log"
 
       - name: Scan exact completed job log for credential leakage

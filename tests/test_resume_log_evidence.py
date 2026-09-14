@@ -160,8 +160,18 @@ class JobLogLeakTests(unittest.TestCase):
         self.assertEqual(result["exact_secret_matches"], 0)
         self.assertEqual(result["encoded_secret_matches"], 0)
 
+    def test_safe_ansi_formatting_passes(self) -> None:
+        result = self.scan_bytes(b"\x1b[32mrequest completed\x1b[0m\nAuthorization: Bearer ***\n")
+        self.assertEqual(result["status"], "pass")
+        self.assertGreater(result["ansi_sequences_removed"], 0)
+
     def test_exact_secret_in_job_log_fails(self) -> None:
         result = self.scan_bytes(b"oops alpha-secret-12345 leaked\n")
+        self.assertEqual(result["status"], "fail")
+        self.assertGreater(result["exact_secret_matches"], 0)
+
+    def test_ansi_fragmented_secret_fails(self) -> None:
+        result = self.scan_bytes(b"oops alpha-\x1b[31msecret-12345\x1b[0m leaked\n")
         self.assertEqual(result["status"], "fail")
         self.assertGreater(result["exact_secret_matches"], 0)
 
@@ -176,6 +186,15 @@ class JobLogLeakTests(unittest.TestCase):
         self.assertEqual(result["status"], "fail")
         self.assertGreater(result["authorization_header_matches"], 0)
 
+    def test_ansi_fragmented_authorization_header_fails(self) -> None:
+        result = self.scan_bytes(b"Authorization: Bea\x1b[36mrer\x1b[0m abcdefghijklmnopqrstuvwxyz123456\n")
+        self.assertEqual(result["status"], "fail")
+        self.assertGreater(result["authorization_header_matches"], 0)
+
+    def test_unknown_escape_material_fails_closed(self) -> None:
+        with self.assertRaises(ValueError):
+            self.scan_bytes(b"request completed\x1bXunexpected\n")
+
 
 class WorkflowWiringTests(unittest.TestCase):
     def test_workflow_persists_private_checkpoint_and_scans_completed_job_log(self) -> None:
@@ -188,6 +207,7 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn("scan-job-log:", text)
         self.assertIn("src/scan_job_log.py", text)
         self.assertIn("actions/jobs/${job_id}/logs", text)
+        self.assertIn("gh api --allow-escape-sequences", text)
         self.assertNotIn("runtime/r11-batch3-private-checkpoint/", text.split("Retain public safe success metadata", 1)[1])
 
 
