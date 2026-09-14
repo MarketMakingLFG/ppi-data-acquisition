@@ -8,7 +8,7 @@
   "collector_release_id": "PPI-PUBLIC-COLLECTOR-003-R2",
   "collector_release_contract_path": "contracts/PPI-PUBLIC-COLLECTOR-003-R2.json",
   "collector_binding_method": "runtime_head_sha_and_receipt_hashes",
-  "repository": "spoudel2010-ux/ppi-data-acquisition",
+  "repository": "MarketMakingLFG/ppi-data-acquisition",
   "repository_id": 1312286476,
   "private_handoff_repository": "musksuman3/ai-signal-engine",
   "private_handoff_repository_id": 1290626648,

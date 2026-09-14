@@ -4,7 +4,7 @@
   "status": "frozen",
   "supersedes": "PPI-PUBLIC-COLLECTOR-003-R1",
   "revision_reason": "Move expectation snapshots to the pinned public Yahoo/yfinance helper so Alpha Vantage is limited to twelve NEWS_SENTIMENT requests per batch.",
-  "repository": "spoudel2010-ux/ppi-data-acquisition",
+  "repository": "MarketMakingLFG/ppi-data-acquisition",
   "repository_id": 1312286476,
   "source_binding": {
     "method": "runtime_head_sha_and_receipt_hashes",
