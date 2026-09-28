@@ -48,10 +48,10 @@ jobs:
       - name: Verify protected environment before provider access
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PPI_PROTECTION_APP_ID: ${{ vars.PPI_PROTECTION_APP_ID }}
-          PPI_PROTECTION_APP_SLUG: ${{ vars.PPI_PROTECTION_APP_SLUG }}
-          PPI_PROTECTION_APP_INDEPENDENT: ${{ vars.PPI_PROTECTION_APP_INDEPENDENT }}
-          PPI_ENVIRONMENT_CREDENTIALS_BOUND: ${{ vars.PPI_ENVIRONMENT_CREDENTIALS_BOUND }}
+          PPI_PROTECTION_APP_ID: ${{ secrets.PPI_PROTECTION_APP_ID }}
+          PPI_PROTECTION_APP_SLUG: ${{ secrets.PPI_PROTECTION_APP_SLUG }}
+          PPI_PROTECTION_APP_INDEPENDENT: ${{ secrets.PPI_PROTECTION_APP_INDEPENDENT }}
+          PPI_ENVIRONMENT_CREDENTIALS_BOUND: ${{ secrets.PPI_ENVIRONMENT_CREDENTIALS_BOUND }}
         run: |
           set -euo pipefail
           mkdir -p "$FAILURE_ROOT"
@@ -305,10 +305,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           COLLECT_JOB_RESULT: ${{ needs.collect-and-handoff.result }}
-          PPI_PROTECTION_APP_ID: ${{ vars.PPI_PROTECTION_APP_ID }}
-          PPI_PROTECTION_APP_SLUG: ${{ vars.PPI_PROTECTION_APP_SLUG }}
-          PPI_PROTECTION_APP_INDEPENDENT: ${{ vars.PPI_PROTECTION_APP_INDEPENDENT }}
-          PPI_ENVIRONMENT_CREDENTIALS_BOUND: ${{ vars.PPI_ENVIRONMENT_CREDENTIALS_BOUND }}
+          PPI_PROTECTION_APP_ID: ${{ secrets.PPI_PROTECTION_APP_ID }}
+          PPI_PROTECTION_APP_SLUG: ${{ secrets.PPI_PROTECTION_APP_SLUG }}
+          PPI_PROTECTION_APP_INDEPENDENT: ${{ secrets.PPI_PROTECTION_APP_INDEPENDENT }}
+          PPI_ENVIRONMENT_CREDENTIALS_BOUND: ${{ secrets.PPI_ENVIRONMENT_CREDENTIALS_BOUND }}
         run: |
           set -euo pipefail
           python src/scan_job_log.py \
