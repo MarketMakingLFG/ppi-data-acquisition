@@ -13,3 +13,7 @@ The webhook checks the raw-body HMAC-SHA256 signature, repository, event type/ac
 Implement independent, authenticated human approval with a durable audit trail and strict run/attempt/environment binding, replay protection, expiration, separation from producer-controlled secrets and workflows, and explicit denial behavior. Have an independent reviewer security-review and exercise approval, rejection, invalid-signature, replay, stale-decision, wrong-repo, wrong-branch, and GitHub API failure tests. Confirm actual GitHub environment policy and immutable successful pilot receipts separately. Never replace rejection with unconditional approval.
 
 No deployment, GitHub App configuration, secret creation, pilot, registry write, or merge is performed by this PR.
+
+## Local unit checks
+
+From the repository root, run `node --test deployment-protection/r11-worker/worker.test.mjs` using Node.js 20 or later. Tests mock GitHub and exercise invalid signatures, identity mismatches, reject-only decisions, and API failures. These are unit tests, not a substitute for live GitHub App and Cloudflare integration evidence.
