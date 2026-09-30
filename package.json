@@ -1,0 +1,1 @@
+{"name":"ppi-r11-independent-protection","private":true,"type":"module","engines":{"node":">=20"},"scripts":{"start":"node deployment-protection/r11-worker/server.mjs","test":"node --test deployment-protection/r11-worker/worker.test.mjs"}}
