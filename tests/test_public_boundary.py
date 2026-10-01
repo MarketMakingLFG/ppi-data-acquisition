@@ -34,10 +34,10 @@ class PublicBoundaryTests(unittest.TestCase):
         licensing = json.loads((ROOT / "config/provider_licensing_dispositions_batch4.json").read_text(encoding="utf-8"))
 
         expected = ["AAPL","MU","NVDA","AMD","AVGO","INTC","TSM","ARM","QCOM","MRVL","GFS","TXN","STM","ON","NXPI","MCHP"]
-        self.assertEqual(scope["status"] if "status" in scope else "review_candidate", "review_candidate")
-        self.assertEqual(acquisition["status"], "review_candidate")
-        self.assertEqual(collector["status"], "review_candidate")
-        self.assertEqual(licensing["status"], "review_candidate")
+        self.assertEqual(scope["status"] if "status" in scope else "frozen", "frozen")
+        self.assertEqual(acquisition["status"], "frozen")
+        self.assertEqual(collector["status"], "frozen")
+        self.assertEqual(licensing["status"], "frozen")
         self.assertEqual(scope["batch_sequence"], 4)
         self.assertEqual(scope["cumulative_tickers"], expected)
         self.assertEqual(scope["new_candidate_tickers"], ["STM","ON","NXPI","MCHP"])
