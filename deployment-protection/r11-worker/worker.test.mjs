@@ -73,16 +73,39 @@ async function withFetch(mock, fn) {
   finally { globalThis.fetch = original; }
 }
 
-function successMock(payload, pending = pendingDeployments(), runOverrides = {}) {
+function successMock(payload, pending = pendingDeployments(), runOverrides = {}, policyOverrides = {}) {
+  const environment = {
+    name: "r11-public-acquisition-protected",
+    can_admins_bypass: false,
+    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+    ...(policyOverrides.environment || {})
+  };
+  const rules = policyOverrides.rules || {
+    total_count: 1,
+    custom_deployment_protection_rules: [{
+      id: 77, enabled: true,
+      app: { id: 123456, slug: "ppi-r11-independent-protection" }
+    }]
+  };
+  const branches = policyOverrides.branches || {
+    total_count: 1,
+    branch_policies: [{ id: 88, name: "main" }]
+  };
   return async (url, options = {}) => {
     if (url === "https://api.github.com/app")
-      return new Response(JSON.stringify({ id: 123456 }), { status: 200 });
+      return new Response(JSON.stringify({ id: 123456, slug: "ppi-r11-independent-protection" }), { status: 200 });
     if (url.includes("/app/installations/456/access_tokens"))
-      return new Response(JSON.stringify({ token: "x".repeat(40) }), { status: 201 });
+      return new Response(JSON.stringify({ token: "test-installation-token-value-0000000000" }), { status: 201 });
     if (url.endsWith("/actions/runs/123"))
       return new Response(JSON.stringify(liveRun(payload, runOverrides)), { status: 200 });
     if (url.endsWith("/actions/runs/123/pending_deployments"))
       return new Response(JSON.stringify(pending), { status: 200 });
+    if (url.includes("/deployment_protection_rules"))
+      return new Response(JSON.stringify(rules), { status: 200 });
+    if (url.includes("/deployment-branch-policies"))
+      return new Response(JSON.stringify(branches), { status: 200 });
+    if (url.endsWith("/environments/r11-public-acquisition-protected"))
+      return new Response(JSON.stringify(environment), { status: 200 });
     if (url.endsWith("/actions/runs/123/deployment_protection_rule"))
       return new Response(null, { status: 204 });
     throw Error("unexpected URL " + url + " " + (options.method || "GET"));
@@ -151,10 +174,11 @@ test("matching real payload shape is approved after app and live run checks", as
     assert.equal(r.status, 200);
     const body = await r.json();
     assert.equal(body.decision, "approved");
-    assert.equal(body.policy, "r11-autonomous-v2");
+    assert.equal(body.policy, "r11-autonomous-v3");
   });
-  assert.equal(calls.length, 5);
-  const reviewBody = JSON.parse(calls[4].options.body);
+  assert.equal(calls.length, 8);
+  const reviewCall = calls.find(call => call.url.endsWith("/deployment_protection_rule"));
+  const reviewBody = JSON.parse(reviewCall.options.body);
   assert.equal(reviewBody.state, "approved");
   assert.equal(reviewBody.environment_name, "r11-public-acquisition-protected");
 });
@@ -173,7 +197,7 @@ test("stale live run is actively rejected", async () => {
     assert.equal(body.decision, "rejected");
     assert.equal(body.reason, "run_stale");
   });
-  assert.equal(JSON.parse(calls[4].options.body).state, "rejected");
+  assert.equal(JSON.parse(calls.find(call => call.url.endsWith("/deployment_protection_rule")).options.body).state, "rejected");
 });
 
 test("wrong live workflow is actively rejected", async () => {
@@ -269,3 +293,48 @@ test("GitHub API errors fail closed and leave protection pending", async () =>
     assert.equal((await r.json()).reason, "github_api_or_auth_failure");
   })
 );
+
+
+test("admin bypass drift is actively rejected", async () => {
+  const payload = makeEvent();
+  await withFetch(successMock(payload, pendingDeployments(), {}, {
+    environment: { can_admins_bypass: true }
+  }), async () => {
+    const r = await worker.fetch(request(payload, { delivery: "delivery-admin-bypass-v3" }), env);
+    const body = await r.json();
+    assert.equal(body.decision, "rejected");
+    assert.equal(body.reason, "admin_bypass_not_disabled");
+  });
+});
+
+test("custom deployment rule must be exactly this App", async () => {
+  const payload = makeEvent();
+  await withFetch(successMock(payload, pendingDeployments(), {}, {
+    rules: {
+      total_count: 1,
+      custom_deployment_protection_rules: [{
+        id: 77, enabled: true, app: { id: 999999, slug: "other-app" }
+      }]
+    }
+  }), async () => {
+    const r = await worker.fetch(request(payload, { delivery: "delivery-rule-drift-v3" }), env);
+    const body = await r.json();
+    assert.equal(body.decision, "rejected");
+    assert.equal(body.reason, "custom_rule_app_id_mismatch");
+  });
+});
+
+test("deployment branch policy must be main only", async () => {
+  const payload = makeEvent();
+  await withFetch(successMock(payload, pendingDeployments(), {}, {
+    branches: {
+      total_count: 2,
+      branch_policies: [{ id: 88, name: "main" }, { id: 89, name: "release/*" }]
+    }
+  }), async () => {
+    const r = await worker.fetch(request(payload, { delivery: "delivery-branch-drift-v3" }), env);
+    const body = await r.json();
+    assert.equal(body.decision, "rejected");
+    assert.equal(body.reason, "branch_policy_count_invalid");
+  });
+});
