@@ -7,6 +7,7 @@ globalThis.crypto ??= webcrypto;
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const pem = privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+const pemPkcs1 = privateKey.export({ format: "pem", type: "pkcs1" }).toString();
 const env = {
   GITHUB_WEBHOOK_SECRET: "unit-test-secret",
   GITHUB_APP_ID: "123456",
@@ -243,6 +244,19 @@ test("GitHub App identity mismatch fails closed", async () => {
     const r = await worker.fetch(request(payload, { delivery: "delivery-app-id-0002" }), env);
     assert.equal(r.status, 503);
     assert.equal((await r.json()).reason, "app_identity_mismatch");
+  });
+});
+
+test("GitHub App PKCS#1 RSA PEM is accepted", async () => {
+  const payload = makeEvent();
+  const pkcs1Env = { ...env, GITHUB_APP_PRIVATE_KEY: pemPkcs1 };
+  await withFetch(successMock(payload), async () => {
+    const r = await worker.fetch(
+      request(payload, { delivery: "delivery-pkcs1-0002" }),
+      pkcs1Env
+    );
+    assert.equal(r.status, 200);
+    assert.equal((await r.json()).decision, "approved");
   });
 });
 
