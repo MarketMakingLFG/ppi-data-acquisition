@@ -83,23 +83,30 @@ class BatchFourCandidateTests(unittest.TestCase):
         for forbidden in ("contents: write","actions: write","pull-requests: write","git push","gh pr create","gh pr merge"):
             self.assertNotIn(forbidden, text)
 
-    def test_batch_four_uses_historical_option_chain_credit_mode(self) -> None:
-        candle_payload = {"t": [1790812800]}
-        self.assertEqual(batch4.latest_candle_date(candle_payload), "2026-10-01")
+    def test_batch_four_uses_guaranteed_prior_session_historical_option_mode(self) -> None:
+        candle_payload = {"t": [0, 86400]}
+        self.assertEqual(batch4.historical_option_date(candle_payload), "1970-01-01")
+        with self.assertRaises(base.CollectionError):
+            batch4.historical_option_date({"t": [86400]})
         option_payload = {"updated": [1790816400, 1790820000]}
         self.assertEqual(batch4.provider_event_time("specialized_contract_data", option_payload, "2099-01-01T00:00:00Z"), "2026-10-01T02:00:00Z")
         source = (ROOT / "src/collect_raw_provider_evidence_batch4.py").read_text()
         self.assertIn('"date": option_date', source)
         self.assertIn('"marketdata_pricing_mode": "historical_eod"', source)
+        self.assertIn('"marketdata_option_date_source": "penultimate_daily_candle_session"', source)
         self.assertIn('"strikeLimit": 3', source)
 
-    def test_marketdata_429_with_reset_header_fails_fast_without_blind_retries(self) -> None:
-        headers = Message()
+    def test_marketdata_credit_429_fails_fast_but_concurrency_429_retries(self) -> None:
         reset = int(time.time()) + 3600
-        headers["X-Api-Ratelimit-Reset"] = str(reset)
-        error = HTTPError("https://api.marketdata.app/v1/stocks/candles/D/AAPL/", 429, "Too Many Requests", headers, None)
+
+        exhausted_headers = Message()
+        exhausted_headers["X-Api-Ratelimit-Limit"] = "100"
+        exhausted_headers["X-Api-Ratelimit-Remaining"] = "0"
+        exhausted_headers["X-Api-Ratelimit-Consumed"] = "0"
+        exhausted_headers["X-Api-Ratelimit-Reset"] = str(reset)
+        exhausted = HTTPError("https://api.marketdata.app/v1/stocks/candles/D/AAPL/", 429, "Too Many Requests", exhausted_headers, None)
         sleeps: list[float] = []
-        with patch.object(base, "urlopen", side_effect=error):
+        with patch.object(base, "urlopen", side_effect=exhausted):
             with self.assertRaises(base.CollectionError) as caught:
                 base.request_json(
                     provider="marketdata",
@@ -109,8 +116,42 @@ class BatchFourCandidateTests(unittest.TestCase):
                     headers={"Authorization": "Bearer redacted"},
                     sleep_fn=sleeps.append,
                 )
-        self.assertIn(f"rate_limit_reset_epoch={reset}", str(caught.exception))
+        self.assertIn("remaining=0", str(caught.exception))
+        self.assertIn(f"reset={reset}", str(caught.exception))
         self.assertEqual(sleeps, [])
+
+        concurrent_headers = Message()
+        concurrent_headers["X-Api-Ratelimit-Remaining"] = "10"
+        concurrent_headers["X-Api-Ratelimit-Reset"] = str(reset)
+        concurrent = HTTPError("https://api.marketdata.app/v1/stocks/candles/D/AAPL/", 429, "Too Many Requests", concurrent_headers, None)
+        sleeps = []
+        with patch.object(base, "urlopen", side_effect=concurrent):
+            with self.assertRaises(base.CollectionError):
+                base.request_json(
+                    provider="marketdata",
+                    host=base.MARKETDATA_HOST,
+                    path="/v1/stocks/candles/D/AAPL/",
+                    params={"countback": 1},
+                    headers={"Authorization": "Bearer redacted"},
+                    sleep_fn=sleeps.append,
+                )
+        self.assertEqual(len(sleeps), 2)
+
+    def test_marketdata_budget_guard_is_fail_closed_and_checkpoint_aware(self) -> None:
+        reset = int(time.time()) + 3600
+        with self.assertRaises(base.CollectionError):
+            batch4.require_marketdata_budget(
+                {"rate_limit_remaining": 31, "rate_limit_reset_epoch": reset},
+                32,
+            )
+        batch4.require_marketdata_budget(
+            {"rate_limit_remaining": 32, "rate_limit_reset_epoch": reset},
+            32,
+        )
+        batch4.require_marketdata_budget(
+            {"rate_limit_remaining": 0, "rate_limit_reset_epoch": int(time.time()) - 1},
+            32,
+        )
 
     def test_batch_three_files_remain_present(self) -> None:
         self.assertTrue((ROOT / "config/r11_batch_003.json").is_file())

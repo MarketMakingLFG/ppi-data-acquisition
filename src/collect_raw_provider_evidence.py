@@ -147,15 +147,30 @@ def request_json(
             if isinstance(exc, HTTPError):
                 retryable = exc.code == 429 or exc.code >= 500
                 if provider == "marketdata" and exc.code == 429 and exc.headers:
-                    reset_raw = exc.headers.get("X-Api-Ratelimit-Reset")
-                    if reset_raw is not None:
+                    parsed_limits: dict[str, int] = {}
+                    for header, field in (
+                        ("X-Api-Ratelimit-Limit", "limit"),
+                        ("X-Api-Ratelimit-Remaining", "remaining"),
+                        ("X-Api-Ratelimit-Consumed", "consumed"),
+                        ("X-Api-Ratelimit-Reset", "reset"),
+                    ):
+                        raw = exc.headers.get(header)
+                        if raw is None:
+                            continue
                         try:
-                            reset_epoch = int(reset_raw)
-                            error_text += f":rate_limit_reset_epoch={reset_epoch}"
-                            if reset_epoch > int(time.time()):
-                                retryable = False
+                            parsed_limits[field] = int(raw)
                         except (TypeError, ValueError):
-                            pass
+                            continue
+                    if parsed_limits:
+                        error_text += ":rate_limit=" + ",".join(
+                            f"{key}={parsed_limits[key]}" for key in ("limit", "remaining", "consumed", "reset")
+                            if key in parsed_limits
+                        )
+                    remaining = parsed_limits.get("remaining")
+                    reset_epoch = parsed_limits.get("reset")
+                    credit_exhausted = remaining is not None and remaining <= 0
+                    if credit_exhausted and reset_epoch is not None and reset_epoch > int(time.time()):
+                        retryable = False
             errors.append(error_text)
             if not retryable or attempt == MAX_ATTEMPTS:
                 break
