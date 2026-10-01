@@ -62,7 +62,7 @@ async function github(path, token, method = "GET", body) {
     },
     ...(body ? { body: JSON.stringify(body) } : {})
   });
-  if (!response.ok) throw new Error("GitHub API status " + response.status);
+  if (!response.ok) throw new Error("GitHub API status " + response.status + " for " + path.split("?")[0]);
   if (response.status === 204) return null;
   const text = await response.text();
   return text ? JSON.parse(text) : null;
