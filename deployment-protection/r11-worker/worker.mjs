@@ -5,7 +5,10 @@ const EXPECTED_OWNER = "MarketMakingLFG";
 const EXPECTED_REPO_ID = 1312286476;
 const EXPECTED_ENV = "r11-public-acquisition-protected";
 const EXPECTED_APP_SLUG = "ppi-r11-independent-protection";
-const EXPECTED_WORKFLOW = ".github/workflows/collect-r11-public-evidence.yml";
+const EXPECTED_WORKFLOWS = new Set([
+  ".github/workflows/collect-r11-public-evidence.yml",
+  ".github/workflows/collect-r11-public-evidence-batch4.yml"
+]);
 const DEFAULT_MAX_RUN_AGE_SECONDS = 3600;
 const encoder = new TextEncoder();
 const inFlight = new Set();
@@ -104,9 +107,9 @@ function routingPolicy(payload, deliveryId, env) {
 }
 
 function workflowPathMatches(path) {
-  return path === EXPECTED_WORKFLOW || (
-    typeof path === "string" && path.startsWith(EXPECTED_WORKFLOW + "@")
-  );
+  if (typeof path !== "string") return false;
+  const base = path.split("@", 1)[0];
+  return EXPECTED_WORKFLOWS.has(base);
 }
 
 async function installationToken(jwt, installationId) {

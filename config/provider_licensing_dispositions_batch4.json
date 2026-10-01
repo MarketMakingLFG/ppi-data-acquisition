@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "contract_id": "PPI-R11-PUBLIC-ACQUISITION-004-R1",
+  "status": "frozen",
+  "public_repository": "MarketMakingLFG/ppi-data-acquisition",
+  "public_raw_artifact_policy": "public_storage_prohibited",
+  "private_handoff_repository": "musksuman3/ai-signal-engine",
+  "private_handoff_repository_id": 1290626648,
+  "dispositions": [
+    {
+      "provider": "yahoo_finance_via_yfinance",
+      "operation": "expectation_history",
+      "package_version": "1.5.1",
+      "maximum_batch_requests": 16,
+      "disposition": "private_repository_handoff",
+      "public_retention": "hash_and_metadata_only"
+    },
+    {
+      "provider": "alpha_vantage",
+      "operation": "NEWS_SENTIMENT",
+      "maximum_batch_requests": 16,
+      "disposition": "private_repository_handoff",
+      "public_retention": "hash_and_metadata_only"
+    },
+    {
+      "provider": "marketdata",
+      "operation": "daily_candles",
+      "maximum_batch_requests": 17,
+      "disposition": "private_repository_handoff",
+      "public_retention": "hash_and_metadata_only"
+    },
+    {
+      "provider": "marketdata",
+      "operation": "option_chain",
+      "maximum_batch_requests": 16,
+      "disposition": "private_repository_handoff",
+      "public_retention": "hash_and_metadata_only"
+    }
+  ],
+  "expected_provider_request_count": 65,
+  "failure_behavior": "fail_closed",
+  "authorized_actions": []
+}
