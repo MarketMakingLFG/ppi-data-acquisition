@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,27 @@ SHARDS = (
 def checkpoint_digest(rows: list[dict[str, Any]]) -> str:
     payload = collector.canonical_json(sorted(rows, key=lambda item: (item["entity"], item["category"])))
     return hashlib.sha256(payload).hexdigest()
+
+
+def latest_candle_date(payload: dict[str, Any]) -> str:
+    values = payload.get("t")
+    collector.require(isinstance(values, list) and values, "MarketData candle payload has no timestamps")
+    try:
+        return datetime.fromtimestamp(float(values[-1]), tz=timezone.utc).date().isoformat()
+    except (TypeError, ValueError, OSError) as exc:
+        raise collector.CollectionError("MarketData candle timestamp is invalid") from exc
+
+
+def provider_event_time(category: str, payload: dict[str, Any], fallback: str) -> str:
+    if category == "specialized_contract_data":
+        values = payload.get("updated")
+        if isinstance(values, list) and values:
+            try:
+                latest = max(float(value) for value in values)
+                return datetime.fromtimestamp(latest, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            except (TypeError, ValueError, OSError):
+                pass
+    return collector.provider_event_time(category, payload, fallback)
 
 
 def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, shard_receipt_output: Path) -> dict[str, Any]:
@@ -121,14 +143,22 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
                 "response_sha256": candle_receipt["response_sha256"],
             })
 
+            option_date = latest_candle_date(candles)
             options, option_receipt = collector.request_json(
                 provider="marketdata",
                 host=collector.MARKETDATA_HOST,
                 path=f"/v1/options/chain/{ticker}/",
-                params={"dte": 45, "side": "call", "strikeLimit": 3, "minOpenInterest": 1, "nonstandard": "false"},
+                params={"date": option_date, "dte": 45, "side": "call", "strikeLimit": 3, "minOpenInterest": 1, "nonstandard": "false"},
                 headers={"Authorization": f"Bearer {marketdata_token}"},
             )
-            option_receipt = {**option_receipt, "operation": "option_chain", "category": "specialized_contract_data", "entity": ticker}
+            option_receipt = {
+                **option_receipt,
+                "operation": "option_chain",
+                "category": "specialized_contract_data",
+                "entity": ticker,
+                "marketdata_pricing_mode": "historical_eod",
+                "marketdata_option_date": option_date,
+            }
             payloads[(ticker, "specialized_contract_data")] = options
             receipts[(ticker, "specialized_contract_data")] = option_receipt
             request_receipts.append(option_receipt)
@@ -183,7 +213,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
                 "category": category,
                 "entity": ticker,
                 "observed_at_utc": observed_at,
-                "provider_event_at_utc": collector.provider_event_time(category, payload, observed_at),
+                "provider_event_at_utc": provider_event_time(category, payload, observed_at),
                 "source_kind": "external_provider_private_handoff_candidate",
                 "source_content_modified": False,
                 "synthetic_content_used": False,
