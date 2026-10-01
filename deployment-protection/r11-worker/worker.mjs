@@ -1,3 +1,4 @@
+import { createPrivateKey, sign as nodeSign } from "node:crypto";
 const EXPECTED_REPO = "MarketMakingLFG/ppi-data-acquisition";
 const EXPECTED_REPO_ID = 1312286476;
 const EXPECTED_ENV = "r11-public-acquisition-protected";
@@ -31,22 +32,22 @@ async function verifySignature(raw, signature, secret) {
 
 async function appJwt(appId, pem) {
   requirePolicy(/^\d+$/.test(String(appId || "")) && Number(appId) > 0, "app_id_missing");
-  requirePolicy(typeof pem === "string" && pem.includes("BEGIN PRIVATE KEY"), "app_key_missing");
-  const der = Uint8Array.from(
-    atob(pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "")),
-    c => c.charCodeAt(0)
+  requirePolicy(
+    typeof pem === "string" &&
+      (pem.includes("BEGIN PRIVATE KEY") || pem.includes("BEGIN RSA PRIVATE KEY")),
+    "app_key_missing"
   );
-  const key = await crypto.subtle.importKey(
-    "pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]
-  );
+  let key;
+  try { key = createPrivateKey(pem); }
+  catch { throw new PolicyError("app_key_invalid"); }
   const now = Math.floor(Date.now() / 1000);
   const payload = b64url(encoder.encode(JSON.stringify({
     iat: now - 60, exp: now + 540, iss: String(appId)
   })));
   const header = b64url(encoder.encode(JSON.stringify({ alg: "RS256", typ: "JWT" })));
   const message = header + "." + payload;
-  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, encoder.encode(message));
-  return message + "." + b64url(sig);
+  const signature = nodeSign("RSA-SHA256", Buffer.from(message), key);
+  return message + "." + b64url(signature);
 }
 
 async function github(path, token, method = "GET", body) {
