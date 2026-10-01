@@ -1,0 +1,327 @@
+name: Collect R11 batch-4 public provider evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type COLLECT-R11-BATCH-4
+        required: true
+        type: string
+      request_id:
+        description: Optional immutable correlation identifier
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: ppi-r11-public-provider-evidence
+  # A newly dispatched immutable evidence request supersedes stale waiting attempts.
+  cancel-in-progress: true
+
+env:
+  PRIVATE_RELEASE_HANDOFF_ENABLED: true
+  OUTPUT_ROOT: runtime/r11-batch4-private-package
+  SAFE_ROOT: runtime/r11-batch4-public-safe
+  FAILURE_ROOT: runtime/r11-batch4-failure
+  CHECKPOINT_ROOT: runtime/r11-batch4-private-checkpoint
+  CONFIRMATION: ${{ inputs.confirmation }}
+  REQUEST_ID: ${{ inputs.request_id }}
+
+jobs:
+  collect-and-handoff:
+    if: github.ref == 'refs/heads/main'
+    environment: r11-public-acquisition-protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out approved public collector
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Verify protected environment before provider access
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PPI_PROTECTION_APP_ID: ${{ secrets.PPI_PROTECTION_APP_ID }}
+          PPI_PROTECTION_APP_SLUG: ${{ secrets.PPI_PROTECTION_APP_SLUG }}
+          PPI_PROTECTION_APP_INDEPENDENT: ${{ secrets.PPI_PROTECTION_APP_INDEPENDENT }}
+          PPI_ENVIRONMENT_CREDENTIALS_BOUND: ${{ secrets.PPI_ENVIRONMENT_CREDENTIALS_BOUND }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$FAILURE_ROOT"
+          python src/scan_job_log_batch4.py \
+            --environment-preflight \
+            --output "$FAILURE_ROOT/protected-environment-preflight.json"
+
+      - name: Install pinned public expectation client
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input 'yfinance==1.5.1'
+          python - <<'PY'
+          import yfinance
+          assert yfinance.__version__ == '1.5.1'
+          PY
+
+      - name: Validate exact public boundary and secrets
+        env:
+          PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+          PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "COLLECT-R11-BATCH-4"
+          test -n "$PPI_ALPHA_VANTAGE_API_KEY"
+          test -n "$PPI_MARKETDATA_TOKEN"
+          test -n "$PPI_PRIVATE_HANDOFF_TOKEN"
+          test "${#PPI_ALPHA_VANTAGE_API_KEY}" -ge 8
+          test "${#PPI_MARKETDATA_TOKEN}" -ge 8
+          test "${#PPI_PRIVATE_HANDOFF_TOKEN}" -ge 20
+          if [ -n "$REQUEST_ID" ]; then
+            case "$REQUEST_ID" in
+              r11-batch4-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+              *) echo "Invalid request_id" >&2; exit 1 ;;
+            esac
+          fi
+          python -m py_compile \
+            src/collect_raw_provider_evidence.py \
+            src/collect_raw_provider_evidence_batch4.py \
+            src/run_resumable_batch4.py \
+            src/private_checkpoint_store_batch4.py \
+            src/scan_job_log_batch4.py \
+            src/fetch_yfinance_expectations.py \
+            src/publish_private_handoff.py \
+            src/publish_prepared_private_handoff_batch4.py
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Restore prior-attempt checkpoint from private storage
+        env:
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTPUT_ROOT" "$SAFE_ROOT" "$FAILURE_ROOT" "$CHECKPOINT_ROOT"
+          python src/private_checkpoint_store_batch4.py restore \
+            --output "$CHECKPOINT_ROOT/prior.json"
+
+      - name: Collect or reuse four verified deterministic shards
+        id: collect
+        env:
+          PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+          PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+        run: |
+          set -euo pipefail
+          python src/run_resumable_batch4.py \
+            --scope config/r11_batch_004.json \
+            --output-root "$OUTPUT_ROOT" \
+            --request-id "$REQUEST_ID" \
+            --failure-output "$FAILURE_ROOT/failure-diagnostics.json" \
+            --shard-receipt-output "$SAFE_ROOT/shard-resume-receipt.json" \
+            --checkpoint-input "$CHECKPOINT_ROOT/prior.json" \
+            --checkpoint-output "$CHECKPOINT_ROOT/current.json"
+
+      - name: Persist resumability checkpoint privately
+        if: always()
+        env:
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -f "$CHECKPOINT_ROOT/current.json" ]; then
+            python src/private_checkpoint_store_batch4.py publish \
+              --checkpoint "$CHECKPOINT_ROOT/current.json" \
+              --receipt "$SAFE_ROOT/private-checkpoint-persistence.json"
+          fi
+
+      - name: Confirm secrets are absent from retained package
+        env:
+          PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+          PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          roots = [Path(os.environ["OUTPUT_ROOT"]), Path(os.environ["SAFE_ROOT"]), Path(os.environ["FAILURE_ROOT"])]
+          secrets = [
+              os.environ.get("PPI_ALPHA_VANTAGE_API_KEY", "").encode(),
+              os.environ.get("PPI_MARKETDATA_TOKEN", "").encode(),
+              os.environ.get("PPI_PRIVATE_HANDOFF_TOKEN", "").encode(),
+          ]
+          for root in roots:
+              for path in root.rglob("*") if root.exists() else []:
+                  if not path.is_file():
+                      continue
+                  payload = path.read_bytes()
+                  for secret in [value for value in secrets if value]:
+                      assert secret not in payload, f"credential leaked into {path}"
+          PY
+
+      - name: Prepare exact package for provenance attestation
+        run: |
+          set -euo pipefail
+          python src/publish_prepared_private_handoff_batch4.py prepare \
+            --package-root "$OUTPUT_ROOT" \
+            --archive "$RUNNER_TEMP/ppi-r11-private-handoff.zip" \
+            --summary "$SAFE_ROOT/private-handoff-preparation.json"
+
+      - name: Generate provenance for exact final ZIP
+        id: attest
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: '${{ runner.temp }}/ppi-r11-private-handoff.zip'
+
+      - name: Publish only the attested exact package
+        env:
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python src/publish_prepared_private_handoff_batch4.py publish \
+            --package-root "$OUTPUT_ROOT" \
+            --archive "$RUNNER_TEMP/ppi-r11-private-handoff.zip" \
+            --preparation-summary "$SAFE_ROOT/private-handoff-preparation.json" \
+            --summary "$SAFE_ROOT/private-handoff-summary.json" \
+            --attestation-id "${{ steps.attest.outputs.attestation-id }}" \
+            --attestation-url "${{ steps.attest.outputs.attestation-url }}"
+
+      - name: Build public safe success receipt
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          source = json.loads((Path(os.environ["SAFE_ROOT"]) / "private-handoff-summary.json").read_text(encoding="utf-8"))
+          receipt = {
+              "schema_version": "1.0.0",
+              "status": "public_collection_private_handoff_complete",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "repository_id": int(os.environ["GITHUB_REPOSITORY_ID"]),
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "head_sha": os.environ["GITHUB_SHA"].lower(),
+              "private_release_tag": source["private_release_tag"],
+              "private_asset_name": source["private_asset_name"],
+              "private_asset_sha256": source["private_asset_sha256"],
+              "github_attestation_id": source["github_attestation_id"],
+              "github_attestation_url": source["github_attestation_url"],
+              "attestation_verified_before_publication": source["attestation_verified_before_publication"],
+              "public_raw_artifact_uploaded": False,
+              "private_repository_dispatched": False,
+              "authorized_actions": [],
+          }
+          payload = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode()
+          receipt["receipt_sha256"] = hashlib.sha256(payload).hexdigest()
+          path = Path(os.environ["SAFE_ROOT"]) / "public-success-receipt.json"
+          path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Delete temporary private checkpoints after successful handoff
+        if: success()
+        env:
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python src/private_checkpoint_store_batch4.py cleanup \
+            --receipt "$SAFE_ROOT/private-checkpoint-cleanup.json"
+
+      - name: Retain public safe success metadata
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ppi-r11-batch4-public-success-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/r11-batch4-public-safe/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Retain safe failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ppi-r11-batch4-public-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/r11-batch4-failure/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Assert raw package was not uploaded publicly
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$PRIVATE_RELEASE_HANDOFF_ENABLED" = "true"
+          test ! -e runtime/r11-batch4-public-safe/cumulative-manifest.json
+          test ! -e runtime/r11-batch4-public-safe/collection-receipt.json
+          test ! -e runtime/r11-batch4-public-safe/current.json
+
+  scan-job-log:
+    name: scan completed producer job log
+    needs: collect-and-handoff
+    if: always()
+    environment: r11-public-acquisition-protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    env:
+      LOG_SAFE_ROOT: runtime/r11-batch4-job-log-scan
+    steps:
+      - name: Check out approved log scanner
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Download completed collect job log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$LOG_SAFE_ROOT"
+          jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs?per_page=100")"
+          job_id="$(jq -r '.jobs[] | select(.name == "collect-and-handoff") | .id' <<<"$jobs_json")"
+          test -n "$job_id"
+          test "$job_id" != "null"
+          gh api --allow-escape-sequences "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" > "$RUNNER_TEMP/collect-and-handoff.log"
+          test -s "$RUNNER_TEMP/collect-and-handoff.log"
+
+      - name: Scan exact completed job log for credential leakage
+        env:
+          PPI_ALPHA_VANTAGE_API_KEY: ${{ secrets.PPI_ALPHA_VANTAGE_API_KEY }}
+          PPI_MARKETDATA_TOKEN: ${{ secrets.PPI_MARKETDATA_TOKEN }}
+          PPI_PRIVATE_HANDOFF_TOKEN: ${{ secrets.PPI_PRIVATE_HANDOFF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python src/scan_job_log_batch4.py \
+            --log "$RUNNER_TEMP/collect-and-handoff.log" \
+            --output "$LOG_SAFE_ROOT/job-log-scan-receipt.json"
+
+      - name: Build protected environment receipt
+        if: success() && needs.collect-and-handoff.result == 'success'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COLLECT_JOB_RESULT: ${{ needs.collect-and-handoff.result }}
+          PPI_PROTECTION_APP_ID: ${{ secrets.PPI_PROTECTION_APP_ID }}
+          PPI_PROTECTION_APP_SLUG: ${{ secrets.PPI_PROTECTION_APP_SLUG }}
+          PPI_PROTECTION_APP_INDEPENDENT: ${{ secrets.PPI_PROTECTION_APP_INDEPENDENT }}
+          PPI_ENVIRONMENT_CREDENTIALS_BOUND: ${{ secrets.PPI_ENVIRONMENT_CREDENTIALS_BOUND }}
+        run: |
+          set -euo pipefail
+          python src/scan_job_log_batch4.py \
+            --environment-receipt \
+            --log-scan-receipt "$LOG_SAFE_ROOT/job-log-scan-receipt.json" \
+            --output "$LOG_SAFE_ROOT/protected-environment-receipt.json"
+
+      - name: Retain safe job-log and protected-environment receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ppi-r11-batch4-public-job-log-scan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/r11-batch4-job-log-scan/
+          retention-days: 30
+          if-no-files-found: warn
