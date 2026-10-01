@@ -143,14 +143,22 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
                 "response_sha256": candle_receipt["response_sha256"],
             })
 
+            option_date = latest_candle_date(candles)
             options, option_receipt = collector.request_json(
                 provider="marketdata",
                 host=collector.MARKETDATA_HOST,
                 path=f"/v1/options/chain/{ticker}/",
-                params={"date": latest_candle_date(candles), "dte": 45, "side": "call", "strikeLimit": 3, "minOpenInterest": 1, "nonstandard": "false"},
+                params={"date": option_date, "dte": 45, "side": "call", "strikeLimit": 3, "minOpenInterest": 1, "nonstandard": "false"},
                 headers={"Authorization": f"Bearer {marketdata_token}"},
             )
-            option_receipt = {**option_receipt, "operation": "option_chain", "category": "specialized_contract_data", "entity": ticker}
+            option_receipt = {
+                **option_receipt,
+                "operation": "option_chain",
+                "category": "specialized_contract_data",
+                "entity": ticker,
+                "marketdata_pricing_mode": "historical_eod",
+                "marketdata_option_date": option_date,
+            }
             payloads[(ticker, "specialized_contract_data")] = options
             receipts[(ticker, "specialized_contract_data")] = option_receipt
             request_receipts.append(option_receipt)
