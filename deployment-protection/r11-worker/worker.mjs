@@ -1,5 +1,6 @@
 const EXPECTED_REPO = "MarketMakingLFG/ppi-data-acquisition";
-const EXPECTED_REPO_ID = 1312286476;\nconst EXPECTED_ENV = "r11-public-acquisition-protected";
+const EXPECTED_REPO_ID = 1312286476;
+const EXPECTED_ENV = "r11-public-acquisition-protected";
 const EXPECTED_WORKFLOW = ".github/workflows/collect-r11-public-evidence.yml";
 const EXPECTED_REF = "refs/heads/main";
 const DEFAULT_MAX_RUN_AGE_SECONDS = 3600;
