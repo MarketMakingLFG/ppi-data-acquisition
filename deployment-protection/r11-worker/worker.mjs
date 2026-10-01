@@ -1,7 +1,10 @@
 import { createPrivateKey, sign as nodeSign } from "node:crypto";
+
 const EXPECTED_REPO = "MarketMakingLFG/ppi-data-acquisition";
+const EXPECTED_OWNER = "MarketMakingLFG";
 const EXPECTED_REPO_ID = 1312286476;
 const EXPECTED_ENV = "r11-public-acquisition-protected";
+const EXPECTED_APP_SLUG = "ppi-r11-independent-protection";
 const EXPECTED_WORKFLOW = ".github/workflows/collect-r11-public-evidence.yml";
 const DEFAULT_MAX_RUN_AGE_SECONDS = 3600;
 const encoder = new TextEncoder();
@@ -62,7 +65,9 @@ async function github(path, token, method = "GET", body) {
     },
     ...(body ? { body: JSON.stringify(body) } : {})
   });
-  if (!response.ok) throw new Error("GitHub API status " + response.status + " for " + path.split("?")[0]);
+  if (!response.ok) {
+    throw new Error("GitHub API status " + response.status + " for " + path.split("?")[0]);
+  }
   if (response.status === 204) return null;
   const text = await response.text();
   return text ? JSON.parse(text) : null;
@@ -104,6 +109,56 @@ function workflowPathMatches(path) {
   );
 }
 
+async function installationToken(jwt, installationId) {
+  const auth = await github(
+    "/app/installations/" + installationId + "/access_tokens",
+    jwt,
+    "POST",
+    {
+      repository_ids: [EXPECTED_REPO_ID],
+      permissions: { actions: "read", deployments: "write" }
+    }
+  );
+  requirePolicy(typeof auth?.token === "string" && auth.token.length > 20, "installation_token_invalid");
+  return auth.token;
+}
+
+async function controlPlaneSnapshot(token) {
+  const encodedEnv = encodeURIComponent(EXPECTED_ENV);
+  const [environment, customRules, branchPolicies] = await Promise.all([
+    github("/repos/" + EXPECTED_REPO + "/environments/" + encodedEnv, token),
+    github("/repos/" + EXPECTED_REPO + "/environments/" + encodedEnv + "/deployment_protection_rules?per_page=100", token),
+    github("/repos/" + EXPECTED_REPO + "/environments/" + encodedEnv + "/deployment-branch-policies?per_page=100", token)
+  ]);
+  return { environment, customRules, branchPolicies };
+}
+
+function verifyControlPlane(snapshot, env) {
+  const { environment, customRules, branchPolicies } = snapshot;
+  requirePolicy(environment?.name === EXPECTED_ENV, "environment_identity_mismatch");
+  requirePolicy(environment?.can_admins_bypass === false, "admin_bypass_not_disabled");
+  requirePolicy(environment?.deployment_branch_policy?.protected_branches === false, "protected_branches_mode_invalid");
+  requirePolicy(environment?.deployment_branch_policy?.custom_branch_policies === true, "custom_branch_policy_not_enabled");
+
+  const rules = customRules?.custom_deployment_protection_rules;
+  requirePolicy(Array.isArray(rules), "custom_rules_invalid");
+  requirePolicy(customRules?.total_count === 1 && rules.length === 1, "custom_rule_count_invalid");
+  const rule = rules[0];
+  requirePolicy(rule?.enabled === true, "custom_rule_not_enabled");
+  requirePolicy(rule?.app?.id === Number(env.GITHUB_APP_ID), "custom_rule_app_id_mismatch");
+  requirePolicy(rule?.app?.slug === EXPECTED_APP_SLUG, "custom_rule_app_slug_mismatch");
+
+  const policies = branchPolicies?.branch_policies;
+  requirePolicy(Array.isArray(policies), "branch_policies_invalid");
+  requirePolicy(branchPolicies?.total_count === 1 && policies.length === 1, "branch_policy_count_invalid");
+  requirePolicy(policies[0]?.name === "main", "branch_policy_not_main_only");
+
+  return {
+    protectionRuleId: rule.id,
+    branchPolicyId: policies[0].id
+  };
+}
+
 function livePolicy(payload, runId, currentRun, pendingDeployments, env) {
   requirePolicy(currentRun?.id === runId, "live_run_id_mismatch");
   requirePolicy(currentRun?.repository?.full_name === EXPECTED_REPO, "live_repository_mismatch");
@@ -114,27 +169,33 @@ function livePolicy(payload, runId, currentRun, pendingDeployments, env) {
   requirePolicy(Number.isSafeInteger(currentRun?.run_attempt) && currentRun.run_attempt > 0, "live_attempt_invalid");
   requirePolicy(workflowPathMatches(currentRun?.path), "live_workflow_invalid");
   requirePolicy(currentRun?.conclusion == null, "run_already_concluded");
+
   const createdMs = Date.parse(currentRun?.created_at || "");
   requirePolicy(Number.isFinite(createdMs), "run_created_at_invalid");
   const maxAge = Number(env.PPI_MAX_RUN_AGE_SECONDS || DEFAULT_MAX_RUN_AGE_SECONDS);
   requirePolicy(Number.isFinite(maxAge) && maxAge >= 60 && maxAge <= 86400, "max_age_invalid");
   const ageSeconds = (Date.now() - createdMs) / 1000;
   requirePolicy(ageSeconds >= -300 && ageSeconds <= maxAge, "run_stale");
+
   requirePolicy(Array.isArray(pendingDeployments), "pending_deployments_invalid");
   const pending = pendingDeployments.find(item => item?.environment?.name === EXPECTED_ENV);
   requirePolicy(Boolean(pending), "environment_not_pending");
+
   return { ageSeconds: Math.floor(ageSeconds), runAttempt: currentRun.run_attempt };
 }
 
 async function review(token, callbackPath, state, comment) {
   return github(callbackPath, token, "POST", {
-    environment_name: EXPECTED_ENV, state, comment
+    environment_name: EXPECTED_ENV,
+    state,
+    comment
   });
 }
 
 function audit(decision, payload, deliveryId, extra = {}) {
   console.log(JSON.stringify({
     type: "r11_deployment_protection_decision",
+    policy: "r11-autonomous-v3",
     decision,
     delivery_id: deliveryId,
     repository: EXPECTED_REPO,
@@ -144,10 +205,42 @@ function audit(decision, payload, deliveryId, extra = {}) {
   }));
 }
 
+export async function selfTest(env) {
+  const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+  const app = await github("/app", jwt);
+  requirePolicy(app?.id === Number(env.GITHUB_APP_ID), "app_identity_mismatch");
+  requirePolicy(app?.slug === EXPECTED_APP_SLUG, "app_slug_mismatch");
+
+  const installations = await github("/app/installations?per_page=100", jwt);
+  requirePolicy(Array.isArray(installations), "installations_invalid");
+  const installation = installations.find(item => item?.account?.login === EXPECTED_OWNER);
+  requirePolicy(Number.isSafeInteger(installation?.id) && installation.id > 0, "expected_installation_missing");
+
+  const token = await installationToken(jwt, installation.id);
+  const repo = await github("/repos/" + EXPECTED_REPO, token);
+  requirePolicy(repo?.id === EXPECTED_REPO_ID && repo?.full_name === EXPECTED_REPO, "repository_identity_mismatch");
+
+  const control = await controlPlaneSnapshot(token);
+  const verified = verifyControlPlane(control, env);
+
+  return {
+    ok: true,
+    policy: "r11-autonomous-v3",
+    app_id: app.id,
+    app_slug: app.slug,
+    installation_id: installation.id,
+    repository_id: repo.id,
+    environment: EXPECTED_ENV,
+    protection_rule_id: verified.protectionRuleId,
+    branch_policy_id: verified.branchPolicyId
+  };
+}
+
 export async function redeliverLatestFailedProtection(env) {
   const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const app = await github("/app", jwt);
   requirePolicy(app?.id === Number(env.GITHUB_APP_ID), "app_identity_mismatch");
+  requirePolicy(app?.slug === EXPECTED_APP_SLUG, "app_slug_mismatch");
   const deliveries = await github("/app/hook/deliveries?per_page=30&status=failure", jwt);
   requirePolicy(Array.isArray(deliveries), "delivery_list_invalid");
   const cutoff = Date.now() - 2 * 60 * 60 * 1000;
@@ -208,25 +301,20 @@ export default {
       const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
       const app = await github("/app", jwt);
       requirePolicy(app?.id === Number(env.GITHUB_APP_ID), "app_identity_mismatch");
+      requirePolicy(app?.slug === EXPECTED_APP_SLUG, "app_slug_mismatch");
 
-      const auth = await github(
-        "/app/installations/" + payload.installation.id + "/access_tokens",
-        jwt, "POST"
-      );
-      requirePolicy(typeof auth?.token === "string" && auth.token.length > 20, "installation_token_invalid");
-
-      const currentRun = await github(
-        "/repos/" + EXPECTED_REPO + "/actions/runs/" + route.runId,
-        auth.token
-      );
-      const pending = await github(
-        "/repos/" + EXPECTED_REPO + "/actions/runs/" + route.runId + "/pending_deployments",
-        auth.token
-      );
+      const token = await installationToken(jwt, payload.installation.id);
+      const [currentRun, pending, control] = await Promise.all([
+        github("/repos/" + EXPECTED_REPO + "/actions/runs/" + route.runId, token),
+        github("/repos/" + EXPECTED_REPO + "/actions/runs/" + route.runId + "/pending_deployments", token),
+        controlPlaneSnapshot(token)
+      ]);
 
       let live;
+      let verifiedControl;
       try {
         live = livePolicy(payload, route.runId, currentRun, pending, env);
+        verifiedControl = verifyControlPlane(control, env);
       } catch (error) {
         const reason = error instanceof PolicyError ? error.code : "live_policy_error";
         if (reason === "environment_not_pending") {
@@ -235,23 +323,32 @@ export default {
           audit("ignored", payload, deliveryId, { reason, run_id: route.runId });
           return json({ handled: true, ...result });
         }
-        await review(auth.token, route.callbackPath, "rejected",
-          "R11 autonomous policy rejected this request: " + reason + ".");
-        const result = { decision: "rejected", reason };
+        await review(
+          token,
+          route.callbackPath,
+          "rejected",
+          "R11 autonomous policy v3 rejected this request: " + reason + ". delivery=" + deliveryId
+        );
+        const result = { decision: "rejected", reason, policy: "r11-autonomous-v3" };
         completedDeliveries.set(deliveryId, result);
         audit("rejected", payload, deliveryId, { reason, run_id: route.runId });
         return json({ handled: true, ...result });
       }
 
-      await review(auth.token, route.callbackPath, "approved",
-        "R11 autonomous policy approved: signed callback, immutable repo, exact environment/main/workflow/SHA, current run attempt, freshness, and pending deployment verified. delivery=" + deliveryId);
-      const result = { decision: "approved", policy: "r11-autonomous-v2" };
+      await review(
+        token,
+        route.callbackPath,
+        "approved",
+        "R11 autonomous policy v3 approved: signed GitHub delivery, exact repository/environment/main/workflow/SHA, fresh run attempt, pending deployment, admin bypass disabled, exactly one matching custom rule, and main-only deployment branch policy verified. delivery=" + deliveryId
+      );
+      const result = { decision: "approved", policy: "r11-autonomous-v3" };
       completedDeliveries.set(deliveryId, result);
       audit("approved", payload, deliveryId, {
-        policy: result.policy,
         run_id: route.runId,
         run_attempt: live.runAttempt,
-        run_age_seconds: live.ageSeconds
+        run_age_seconds: live.ageSeconds,
+        protection_rule_id: verifiedControl.protectionRuleId,
+        branch_policy_id: verifiedControl.branchPolicyId
       });
       return json({ handled: true, ...result });
     } catch (error) {
