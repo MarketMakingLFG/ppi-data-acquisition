@@ -23,7 +23,7 @@ function makeEvent(overrides = {}) {
     head_sha: sha,
     event: "workflow_dispatch",
     path: ".github/workflows/collect-r11-public-evidence.yml@refs/heads/main",
-    repository: { full_name: "MarketMakingLFG/ppi-data-acquisition" }
+    repository: { id: 1312286476, full_name: "MarketMakingLFG/ppi-data-acquisition" }
   };
   return {
     action: "requested",
@@ -67,7 +67,7 @@ function liveRun(payload, overrides = {}) {
     path: ".github/workflows/collect-r11-public-evidence.yml@refs/heads/main",
     conclusion: null,
     created_at: new Date(Date.now() - 30_000).toISOString(),
-    repository: { full_name: "MarketMakingLFG/ppi-data-acquisition" },
+    repository: { id: 1312286476, full_name: "MarketMakingLFG/ppi-data-acquisition" },
     ...overrides
   };
 }
