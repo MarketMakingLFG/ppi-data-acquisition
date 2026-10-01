@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "contract_id": "PPI-R11-PUBLIC-ACQUISITION-004-R1",
-  "status": "review_candidate",
+  "status": "frozen",
   "supersedes": null,
   "revision_reason": "Batch 4 extends the frozen cumulative R11 cohort from twelve to sixteen tickers while preserving the batch-3 R2 provider mapping, protected-environment trust boundary, private handoff model, and downstream authority holds.",
   "private_contract_id": "PPI-R11-BATCH-EVIDENCE-004-R1",
