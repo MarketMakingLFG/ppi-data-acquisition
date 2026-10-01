@@ -6,7 +6,7 @@ Normal operation is designed for **zero routine human intervention**. The servic
 
 ## Autonomous policy
 
-Policy identifier: `r11-autonomous-v1`.
+Policy identifier: `r11-autonomous-v3`.
 
 A request can be approved only when all of the following are true:
 
@@ -18,7 +18,7 @@ A request can be approved only when all of the following are true:
 - Ref is exactly `refs/heads/main`.
 - Payload SHA is a valid 40-character commit SHA and matches the workflow run.
 - Workflow run repository, branch, event, attempt, and SHA match the webhook payload.
-- Workflow path is exactly `.github/workflows/collect-r11-public-evidence.yml` (GitHub's `@ref` suffix is accepted).
+- Workflow path must be one of the exact reviewed protected acquisition workflows: `.github/workflows/collect-r11-public-evidence.yml` for completed batch 3 or `.github/workflows/collect-r11-public-evidence-batch4.yml` for batch 4. GitHub `@ref` suffixes are accepted; all other workflow paths are rejected.
 - GitHub App ID matches the configured App when the webhook payload supplies App identity.
 - The service successfully creates a GitHub App JWT and installation access token.
 - A fresh live copy of the workflow run is fetched from GitHub and still matches the payload, including repository ID `1312286476`.
