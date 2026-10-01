@@ -1,9 +1,10 @@
-name: Validate R11 independent protection Worker
+name: Validate R11 autonomous protection policy
 on:
   pull_request:
     paths:
       - 'deployment-protection/r11-worker/**'
       - '.github/workflows/validate-r11-protection-worker.yml'
+      - 'package.json'
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,5 +16,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Run reject-only webhook unit tests
-        run: node --test deployment-protection/r11-worker/worker.test.mjs
+      - name: Run autonomous protection policy tests
+        run: npm test
