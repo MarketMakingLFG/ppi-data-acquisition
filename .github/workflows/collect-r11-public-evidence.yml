@@ -21,7 +21,8 @@ permissions:
 
 concurrency:
   group: ppi-r11-public-provider-evidence
-  cancel-in-progress: false
+  # A newly dispatched immutable evidence request supersedes stale waiting attempts.
+  cancel-in-progress: true
 
 env:
   PRIVATE_RELEASE_HANDOFF_ENABLED: true
