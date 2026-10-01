@@ -1,41 +1,75 @@
-# R11 independent deployment-protection service (draft)
+# R11 independent deployment-protection service
 
-This service is an **intentionally reject-only, fail-closed** implementation for the GitHub App `ppi-r11-independent-protection`. It is **not** an operational approval service and must not be treated as an R2 PASS or pilot-ready gate. It cannot approve any deployment.
+This service implements the independent GitHub App deployment-protection rule for `r11-public-acquisition-protected`.
 
-## Current hosting and live evidence
+Normal operation is designed for **zero routine human intervention**. The service does not approve unconditionally: it automatically approves only when the signed GitHub webhook and current GitHub run state satisfy the fixed R11 policy. Any missing, stale, mismatched, or unverifiable evidence fails closed.
 
-The draft is hosted independently on Render as `ppi-r11-independent-protection` at `https://ppi-r11-independent-protection.onrender.com`. The webhook endpoint is `/github/webhook`. Runtime configuration is supplied only through Render environment secrets: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, and `GITHUB_WEBHOOK_SECRET`; secret values must never be committed or logged.
+## Autonomous policy
 
-On 2026-10-01 UTC, the Render build for commit `fa068f02e5152d1d07334598b9544db761857bf0` completed successfully with **6/6 unit tests passing**. A GitHub App `ping` redelivery then reached the live Render endpoint and returned HTTP **200** with body `{"ignored":true}`. Because signature verification occurs before event dispatch, this demonstrates that the configured GitHub webhook secret matched the Render secret for that signed delivery and that GitHub-to-Render HTTPS delivery reached the application.
+Policy identifier: `r11-autonomous-v1`.
 
-This evidence does **not** prove the deployment-protection review path. No live `deployment_protection_rule` event has yet demonstrated App JWT creation, installation-token exchange, or a GitHub rejection API call.
+A request can be approved only when all of the following are true:
 
-## Behavior
+- GitHub webhook HMAC-SHA256 verification succeeds before JSON parsing.
+- Event is `deployment_protection_rule` with action `requested`.
+- Repository is exactly `MarketMakingLFG/ppi-data-acquisition` and is private.
+- Environment is exactly `r11-public-acquisition-protected`.
+- Trigger is exactly `workflow_dispatch`.
+- Ref is exactly `refs/heads/main`.
+- Payload SHA is a valid 40-character commit SHA and matches the workflow run.
+- Workflow run repository, branch, event, attempt, and SHA match the webhook payload.
+- Workflow path is exactly `.github/workflows/collect-r11-public-evidence.yml` (GitHub's `@ref` suffix is accepted).
+- GitHub App ID matches the configured App when the webhook payload supplies App identity.
+- The service successfully creates a GitHub App JWT and installation access token.
+- A fresh live copy of the workflow run is fetched from GitHub and still matches the payload.
+- The run is not concluded and is not older than the configured freshness window (default 3600 seconds).
+- GitHub's pending-deployments API confirms that `r11-public-acquisition-protected` is still waiting for protection.
 
-The webhook verifies the raw-body HMAC-SHA256 signature before parsing or acting. It checks event type/action, repository, private-repository identity, `main` workflow branch, installation ID, deployment-protection rule ID, run ID, and environment `r11-public-acquisition-protected`. For a matching deployment-protection request it obtains a GitHub App installation token and sends **rejection only** through GitHub's deployment-protection review endpoint.
+Only after all of those checks pass does the service send `state: approved` to GitHub.
 
-Invalid events cannot trigger a review. GitHub API failures return 503. A transport-level HTTP success is never treated as deployment approval.
+Policy mismatches discovered after authentication are actively rejected. GitHub authentication/API failures return HTTP 503 and leave the protection pending rather than turning uncertainty into approval.
 
-## Render deployment
+## Replay and stale-request handling
 
-The repository root `package.json` runs `npm test` for build validation and `npm start` for the Node HTTP adapter in `server.mjs`. The server binds to Render's `PORT`, exposes `/healthz`, and forwards webhook requests to `worker.mjs`.
+The service uses the GitHub delivery ID for in-process duplicate suppression. More importantly, each decision re-reads the live workflow run and GitHub pending-deployment state. A redelivery after the environment is no longer pending cannot create a new approval. Current run attempt, SHA, workflow path, branch, event, conclusion, and age must all remain valid.
 
-The GitHub App webhook URL is:
+The GitHub deployment-protection review itself is the durable decision record. Render also emits a structured decision log containing only non-secret identifiers and policy result metadata.
 
-`https://ppi-r11-independent-protection.onrender.com/github/webhook`
+## Hosting
 
-The App is intended to be installed only on `MarketMakingLFG/ppi-data-acquisition` with the required Actions/Deployments permissions. The protected environment remains `r11-public-acquisition-protected`, restricted to `main`, with admin bypass disabled and the custom deployment-protection rule enabled.
+Render service:
 
-## Before any real approval path
+- Name: `ppi-r11-independent-protection`
+- Webhook endpoint: `https://ppi-r11-independent-protection.onrender.com/github/webhook`
+- Health endpoint: `/healthz`
+- Runtime: Node.js
+- Build validation: `npm test`
+- Start command: `npm start`
 
-Do not add unconditional or unattended approval. Before an approval-capable path is enabled, implement an independent authenticated approval authority, durable audit trail, strict run/attempt/environment binding, replay protection/idempotency, expiration and stale-decision handling, separation from producer-controlled credentials/workflows, and explicit denial behavior. Security tests must cover approval authorization, rejection, invalid signatures, replay, stale decisions, wrong repository/branch/environment, and GitHub API failures.
+Required Render secrets:
 
-A live `deployment_protection_rule` receipt and immutable pilot evidence are still required before claiming the protection gate closed. Producer pilot execution, registry mutation, protection bypass, and merge remain outside this draft's evidence.
+- `GITHUB_APP_ID`
+- `GITHUB_APP_PRIVATE_KEY`
+- `GITHUB_WEBHOOK_SECRET`
 
-## Local unit checks
+Optional policy setting:
 
-From the repository root:
+- `PPI_MAX_RUN_AGE_SECONDS` — default `3600`, allowed range 60–86400 seconds.
 
-`node --test deployment-protection/r11-worker/worker.test.mjs`
+Secret values must never be committed, printed, or copied into documentation.
 
-Use Node.js 20 or later. The tests mock GitHub and exercise invalid signatures, identity mismatches, reject-only decisions, and API failures. Unit tests are not a substitute for live GitHub App integration evidence.
+## Verified evidence so far
+
+Before autonomous-policy implementation, the Render service successfully built with 6/6 reject-only tests, and a signed GitHub App `ping` redelivery reached the live Render endpoint and returned HTTP 200 with `{"ignored":true}`. Because signature verification happens before event dispatch, that demonstrated the GitHub-to-Render webhook secret/signature path.
+
+The autonomous-policy implementation adds live GitHub run verification, pending-deployment verification, automatic approval, active rejection, stale-run checks, replay handling, and structured audit logging. Unit and deployment evidence for the exact autonomous-policy commit must pass before a provider pilot is considered valid.
+
+A provider pilot is the required live integration test for the remaining path: `deployment_protection_rule` webhook → App JWT → installation token → live policy reads → deployment-protection approval → protected job start.
+
+## Safety invariants
+
+- No protection bypass is used.
+- No approval is issued from an unsigned, stale, mismatched, or unverifiable request.
+- No producer provider secret is sent to or stored by this service.
+- GitHub API/authentication uncertainty remains pending/fail-closed.
+- Registry mutation occurs only after the corresponding evidence gate passes.
