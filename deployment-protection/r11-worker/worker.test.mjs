@@ -47,7 +47,7 @@ test("matching event issues rejection only", async () => {
   await withFetch(async (url, options) => {
     calls.push({ url, options });
     if (url.includes("/access_tokens")) return new Response(JSON.stringify({ token: "unit-test-installation-token" }), { status: 201 });
-    return new Response("", { status: 200 });
+    return new Response(null, { status: 204 });
   }, async () => {
     const r = await worker.fetch(request(event), env);
     assert.equal(r.status, 200);
