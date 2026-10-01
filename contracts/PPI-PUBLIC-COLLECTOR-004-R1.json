@@ -13,7 +13,7 @@
     "handoff_path": "src/publish_private_handoff.py",
     "workflow_path": ".github/workflows/collect-r11-public-evidence-batch4.yml",
     "scope_path": "config/r11_batch_004.json",
-    "licensing_path": "config/provider_licensing_dispositions.json"
+    "licensing_path": "config/provider_licensing_dispositions_batch4.json"
   },
   "provider_operations": [
     "yahoo_finance_via_yfinance:expectation_history",
