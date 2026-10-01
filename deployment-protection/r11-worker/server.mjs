@@ -1,5 +1,5 @@
 import http from "node:http";
-import worker from "./worker.mjs";
+import worker, { redeliverLatestFailedProtection } from "./worker.mjs";
 
 const port = Number(process.env.PORT || 10000);
 const server = http.createServer(async (req, res) => {
@@ -8,7 +8,7 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({
       status: "ok",
       mode: "autonomous-policy",
-      policy: "r11-autonomous-v1"
+      policy: "r11-autonomous-v2"
     }));
   }
 
@@ -36,6 +36,22 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(port, "0.0.0.0", () =>
-  console.log("R11 autonomous protection service listening")
-);
+server.listen(port, "0.0.0.0", async () => {
+  console.log("R11 autonomous protection service listening");
+  if (process.env.PPI_REDELIVER_FAILED_ON_START === "true") {
+    try {
+      const result = await redeliverLatestFailedProtection(process.env);
+      console.log(JSON.stringify({
+        type: "r11_webhook_recovery",
+        ...result
+      }));
+    } catch (error) {
+      console.log(JSON.stringify({
+        type: "r11_webhook_recovery",
+        redelivered: false,
+        reason: "recovery_failed",
+        error: String(error?.message || error).slice(0, 160)
+      }));
+    }
+  }
+});
