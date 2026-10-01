@@ -176,8 +176,9 @@ test("matching real payload shape is approved after app and live run checks", as
     assert.equal(body.decision, "approved");
     assert.equal(body.policy, "r11-autonomous-v3");
   });
-  assert.equal(calls.length, 5);
-  const reviewBody = JSON.parse(calls[4].options.body);
+  assert.equal(calls.length, 8);
+  const reviewCall = calls.find(call => call.url.endsWith("/deployment_protection_rule"));
+  const reviewBody = JSON.parse(reviewCall.options.body);
   assert.equal(reviewBody.state, "approved");
   assert.equal(reviewBody.environment_name, "r11-public-acquisition-protected");
 });
