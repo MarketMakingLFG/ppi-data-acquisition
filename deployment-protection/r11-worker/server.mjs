@@ -49,7 +49,8 @@ server.listen(port, "0.0.0.0", async () => {
       console.log(JSON.stringify({
         type: "r11_webhook_recovery",
         redelivered: false,
-        reason: "recovery_failed"
+        reason: "recovery_failed",
+        error: String(error?.message || error).slice(0, 160)
       }));
     }
   }
