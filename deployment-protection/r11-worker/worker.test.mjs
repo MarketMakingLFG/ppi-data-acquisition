@@ -200,6 +200,19 @@ test("stale live run is actively rejected", async () => {
   assert.equal(JSON.parse(calls.find(call => call.url.endsWith("/deployment_protection_rule")).options.body).state, "rejected");
 });
 
+test("exact batch-4 workflow is approved by the same autonomous gate", async () => {
+  const payload = makeEvent();
+  await withFetch(successMock(payload, pendingDeployments(), {
+    path: ".github/workflows/collect-r11-public-evidence-batch4.yml@refs/heads/main"
+  }), async () => {
+    const r = await worker.fetch(request(payload, { delivery: "delivery-batch4-workflow" }), env);
+    const body = await r.json();
+    assert.equal(r.status, 200);
+    assert.equal(body.decision, "approved");
+    assert.equal(body.policy, "r11-autonomous-v3");
+  });
+});
+
 test("wrong live workflow is actively rejected", async () => {
   const payload = makeEvent();
   await withFetch(successMock(payload, pendingDeployments(), {
