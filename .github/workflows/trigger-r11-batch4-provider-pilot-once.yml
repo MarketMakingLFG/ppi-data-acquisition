@@ -1,4 +1,5 @@
 name: Trigger R11 batch-4 provider pilot once
+# post-reset-proof: 2026-10-01T19:51Z
 
 on:
   push:
