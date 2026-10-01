@@ -1,0 +1,20 @@
+name: Validate R11 autonomous protection policy
+on:
+  pull_request:
+    paths:
+      - 'deployment-protection/r11-worker/**'
+      - '.github/workflows/validate-r11-protection-worker.yml'
+      - 'package.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run autonomous protection policy tests
+        run: npm test
