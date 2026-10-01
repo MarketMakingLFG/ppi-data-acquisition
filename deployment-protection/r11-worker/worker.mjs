@@ -78,7 +78,7 @@ function workflowPathMatches(path) {
 function routingIdentity(payload) {
   const run = payload?.workflow_run;
   requirePolicy(payload?.repository?.full_name === EXPECTED_REPO, "wrong_repository");
-  requirePolicy(payload?.repository?.private === true, "repository_not_private");
+  requirePolicy(payload?.repository?.id === EXPECTED_REPO_ID, "wrong_repository_id");
   requirePolicy(payload?.environment === EXPECTED_ENV, "wrong_environment");
   requirePolicy(Number.isSafeInteger(run?.id) && run.id > 0, "run_id_invalid");
   requirePolicy(Number.isSafeInteger(payload?.installation?.id) && payload.installation.id > 0, "installation_id_invalid");
