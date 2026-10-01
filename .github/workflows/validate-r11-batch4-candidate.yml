@@ -1,0 +1,31 @@
+name: Validate R11 batch-4 candidate
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/PPI-R11-PUBLIC-ACQUISITION-004-R1.json'
+      - 'contracts/PPI-PUBLIC-COLLECTOR-004-R1.json'
+      - 'config/r11_batch_004.json'
+      - 'config/provider_licensing_dispositions_batch4.json'
+      - 'src/*batch4.py'
+      - '.github/workflows/collect-r11-public-evidence-batch4.yml'
+      - '.github/workflows/validate-r11-batch4-candidate.yml'
+      - 'tests/test_batch4_candidate.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Compile batch-4 entrypoints
+        run: |
+          python -m py_compile             src/collect_raw_provider_evidence_batch4.py             src/run_resumable_batch4.py             src/publish_private_handoff_batch4.py             src/publish_prepared_private_handoff_batch4.py             src/private_checkpoint_store_batch4.py             src/scan_job_log_batch4.py
+      - name: Run batch-4 regression tests
+        run: python -m unittest tests.test_batch4_candidate -v
