@@ -1,0 +1,30 @@
+name: Trigger R11 batch-4 provider pilot once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/trigger-r11-batch4-provider-pilot-once.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch protected R11 batch-4 collection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          request_id="r11-batch4-${GITHUB_SHA:0:8}"
+          gh api -X POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/collect-r11-public-evidence-batch4.yml/dispatches" \
+            -f ref=main \
+            -f 'inputs[confirmation]=COLLECT-R11-BATCH-4' \
+            -f "inputs[request_id]=${request_id}"
+          echo "Dispatched protected R11 batch-4 provider pilot request_id=${request_id}"
