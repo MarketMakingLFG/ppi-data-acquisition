@@ -30,13 +30,33 @@ def checkpoint_digest(rows: list[dict[str, Any]]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def latest_candle_date(payload: dict[str, Any]) -> str:
+def historical_option_date(payload: dict[str, Any]) -> str:
     values = payload.get("t")
-    collector.require(isinstance(values, list) and values, "MarketData candle payload has no timestamps")
+    collector.require(isinstance(values, list) and len(values) >= 2, "MarketData candle payload lacks a prior closed session")
     try:
-        return datetime.fromtimestamp(float(values[-1]), tz=timezone.utc).date().isoformat()
+        # Always use the penultimate daily candle. During market hours the last
+        # candle may represent the current session, which would forfeit the
+        # historical option-chain credit model. One session older is guaranteed
+        # to be historical while remaining inside the frozen 168-hour window.
+        return datetime.fromtimestamp(float(values[-2]), tz=timezone.utc).date().isoformat()
     except (TypeError, ValueError, OSError) as exc:
         raise collector.CollectionError("MarketData candle timestamp is invalid") from exc
+
+
+def require_marketdata_budget(receipt: dict[str, Any], remaining_calls: int) -> None:
+    collector.require(remaining_calls >= 0, "remaining MarketData call count is invalid")
+    remaining = receipt.get("rate_limit_remaining")
+    reset_epoch = receipt.get("rate_limit_reset_epoch")
+    if not isinstance(remaining, int):
+        return
+    # Cached checkpoint receipts can carry an old rate-limit window. Only use
+    # the budget when its reset is still in the future (or reset is unavailable).
+    if isinstance(reset_epoch, int) and reset_epoch <= int(collector.time.time()):
+        return
+    collector.require(
+        remaining >= remaining_calls,
+        f"MarketData credit budget insufficient: remaining={remaining}, required_after_current={remaining_calls}, reset_epoch={reset_epoch}",
+    )
 
 
 def provider_event_time(category: str, payload: dict[str, Any], fallback: str) -> str:
@@ -74,6 +94,25 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
     receipts: dict[tuple[str, str], dict[str, Any]] = {}
     shard_rows: list[dict[str, Any]] = []
     alpha_index = 0
+
+    # Spend the required QQQ benchmark call first so its rate-limit headers act
+    # as a real quota preflight before Alpha Vantage/Yahoo work is consumed.
+    benchmark_payload, benchmark_receipt = collector.request_json(
+        provider="marketdata",
+        host=collector.MARKETDATA_HOST,
+        path=f"/v1/stocks/candles/D/{collector.BENCHMARK}/",
+        params={"countback": 65, "adjustsplits": "true"},
+        headers={"Authorization": f"Bearer {marketdata_token}"},
+    )
+    benchmark_receipt = {
+        **benchmark_receipt,
+        "operation": "daily_candles",
+        "category": "benchmark_market_time_series",
+        "entity": collector.BENCHMARK,
+    }
+    request_receipts.append(benchmark_receipt)
+    remaining_marketdata_calls = 32  # 16 ticker candles + 16 historical option chains
+    require_marketdata_budget(benchmark_receipt, remaining_marketdata_calls)
 
     # Execute the sixteen ticker/provider operations as four deterministic shards.
     # Each shard performs 4 tickers x 4 provider categories = 16 operations and
@@ -132,6 +171,8 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
                 headers={"Authorization": f"Bearer {marketdata_token}"},
             )
             candle_receipt = {**candle_receipt, "operation": "daily_candles", "category": "market_time_series", "entity": ticker}
+            remaining_marketdata_calls -= 1
+            require_marketdata_budget(candle_receipt, remaining_marketdata_calls)
             payloads[(ticker, "market_time_series")] = candles
             receipts[(ticker, "market_time_series")] = candle_receipt
             request_receipts.append(candle_receipt)
@@ -143,7 +184,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
                 "response_sha256": candle_receipt["response_sha256"],
             })
 
-            option_date = latest_candle_date(candles)
+            option_date = historical_option_date(candles)
             options, option_receipt = collector.request_json(
                 provider="marketdata",
                 host=collector.MARKETDATA_HOST,
@@ -158,7 +199,10 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
                 "entity": ticker,
                 "marketdata_pricing_mode": "historical_eod",
                 "marketdata_option_date": option_date,
+                "marketdata_option_date_source": "penultimate_daily_candle_session",
             }
+            remaining_marketdata_calls -= 1
+            require_marketdata_budget(option_receipt, remaining_marketdata_calls)
             payloads[(ticker, "specialized_contract_data")] = options
             receipts[(ticker, "specialized_contract_data")] = option_receipt
             request_receipts.append(option_receipt)
@@ -179,22 +223,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
             "provider_request_count": 16,
         })
 
-    # The benchmark is intentionally outside the four ticker shards so the frozen
-    # total remains 64 ticker operations + one QQQ request = 65.
-    benchmark_payload, benchmark_receipt = collector.request_json(
-        provider="marketdata",
-        host=collector.MARKETDATA_HOST,
-        path=f"/v1/stocks/candles/D/{collector.BENCHMARK}/",
-        params={"countback": 65, "adjustsplits": "true"},
-        headers={"Authorization": f"Bearer {marketdata_token}"},
-    )
-    benchmark_receipt = {
-        **benchmark_receipt,
-        "operation": "daily_candles",
-        "category": "benchmark_market_time_series",
-        "entity": collector.BENCHMARK,
-    }
-    request_receipts.append(benchmark_receipt)
+    collector.require(remaining_marketdata_calls == 0, "MarketData operation accounting mismatch")
     collector.require(len(request_receipts) == 65, "provider operation count mismatch")
 
     entries: list[dict[str, Any]] = []
