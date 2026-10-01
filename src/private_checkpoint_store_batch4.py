@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from publish_private_handoff import API_ROOT, PRIVATE_REPOSITORY, PRIVATE_REPOSITORY_ID, UPLOAD_ROOT, api, canonical_json, require
+from publish_private_handoff_batch4 import API_ROOT, PRIVATE_REPOSITORY, PRIVATE_REPOSITORY_ID, UPLOAD_ROOT, api, canonical_json, require
 
 ASSET_RE = re.compile(r"^ppi-r11-checkpoint-(\d+)-(\d+)-([0-9a-f]{64})-([0-9a-f]{64})\.json$")
 CHECKPOINT_STATUS = "r11_private_checkpoint_material"
