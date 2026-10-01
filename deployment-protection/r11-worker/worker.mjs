@@ -110,7 +110,8 @@ function payloadPolicy(payload, deliveryId, env) {
 function livePolicy(payload, currentRun, pendingDeployments, env) {
   const run = payload.workflow_run;
   requirePolicy(currentRun?.id === run.id, "live_run_id_mismatch");
-  requirePolicy(currentRun?.repository?.full_name === EXPECTED_REPO, "live_repository_mismatch");\n  requirePolicy(currentRun?.repository?.id === EXPECTED_REPO_ID, "live_repository_id_mismatch");
+  requirePolicy(currentRun?.repository?.full_name === EXPECTED_REPO, "live_repository_mismatch");
+  requirePolicy(currentRun?.repository?.id === EXPECTED_REPO_ID, "live_repository_id_mismatch");
   requirePolicy(currentRun?.head_branch === "main", "live_branch_invalid");
   requirePolicy(currentRun?.event === "workflow_dispatch", "live_event_invalid");
   requirePolicy((currentRun?.head_sha || "").toLowerCase() === payload.sha.toLowerCase(), "live_sha_mismatch");
