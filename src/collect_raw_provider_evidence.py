@@ -101,6 +101,7 @@ def request_json(
             with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
                 status = int(getattr(response, "status", response.getcode()))
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
+                response_headers = response.headers
             response_received = utc_now()
             require(status in {200, 203}, f"{provider} returned HTTP {status}")
             require(len(raw) <= MAX_RESPONSE_BYTES, f"{provider} response exceeded size limit")
@@ -115,7 +116,7 @@ def request_json(
                         raise CollectionError(f"Alpha Vantage returned provider field {key}")
             if provider == "marketdata":
                 require(payload.get("s") == "ok", f"MarketData returned status {payload.get('s')!r}")
-            return payload, {
+            receipt = {
                 "provider": provider,
                 "host": host,
                 "path": path,
@@ -126,11 +127,36 @@ def request_json(
                 "response_bytes": len(raw),
                 "response_sha256": hashlib.sha256(raw).hexdigest(),
             }
+            if provider == "marketdata" and response_headers:
+                for header, field in (
+                    ("X-Api-Ratelimit-Limit", "rate_limit_limit"),
+                    ("X-Api-Ratelimit-Remaining", "rate_limit_remaining"),
+                    ("X-Api-Ratelimit-Consumed", "rate_limit_consumed"),
+                    ("X-Api-Ratelimit-Reset", "rate_limit_reset_epoch"),
+                ):
+                    value = response_headers.get(header)
+                    if value is not None:
+                        try:
+                            receipt[field] = int(value)
+                        except (TypeError, ValueError):
+                            receipt[field] = str(value)[:64]
+            return payload, receipt
         except (HTTPError, URLError, TimeoutError, OSError, CollectionError) as exc:
-            errors.append(f"attempt={attempt}:{type(exc).__name__}:{exc}")
+            error_text = f"attempt={attempt}:{type(exc).__name__}:{exc}"
             retryable = not isinstance(exc, CollectionError)
             if isinstance(exc, HTTPError):
                 retryable = exc.code == 429 or exc.code >= 500
+                if provider == "marketdata" and exc.code == 429 and exc.headers:
+                    reset_raw = exc.headers.get("X-Api-Ratelimit-Reset")
+                    if reset_raw is not None:
+                        try:
+                            reset_epoch = int(reset_raw)
+                            error_text += f":rate_limit_reset_epoch={reset_epoch}"
+                            if reset_epoch > int(time.time()):
+                                retryable = False
+                        except (TypeError, ValueError):
+                            pass
+            errors.append(error_text)
             if not retryable or attempt == MAX_ATTEMPTS:
                 break
             sleep_fn(retry_delay(exc, attempt))
