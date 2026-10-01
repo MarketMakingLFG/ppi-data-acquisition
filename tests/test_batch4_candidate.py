@@ -137,21 +137,85 @@ class BatchFourCandidateTests(unittest.TestCase):
                 )
         self.assertEqual(len(sleeps), 2)
 
-    def test_marketdata_budget_guard_is_fail_closed_and_checkpoint_aware(self) -> None:
+    def test_marketdata_preflight_requires_live_complete_quota_headers(self) -> None:
         reset = int(time.time()) + 3600
+        good = {
+            "rate_limit_limit": 100,
+            "rate_limit_remaining": 32,
+            "rate_limit_consumed": 1,
+            "rate_limit_reset_epoch": reset,
+        }
+        batch4.require_marketdata_preflight(good, 32)
+
+        for missing in ("rate_limit_limit", "rate_limit_remaining", "rate_limit_consumed", "rate_limit_reset_epoch"):
+            bad = dict(good)
+            bad.pop(missing)
+            with self.assertRaises(base.CollectionError):
+                batch4.require_marketdata_preflight(bad, 32)
+
         with self.assertRaises(base.CollectionError):
-            batch4.require_marketdata_budget(
-                {"rate_limit_remaining": 31, "rate_limit_reset_epoch": reset},
-                32,
-            )
-        batch4.require_marketdata_budget(
-            {"rate_limit_remaining": 32, "rate_limit_reset_epoch": reset},
-            32,
+            batch4.require_marketdata_preflight({**good, "rate_limit_remaining": 31}, 32)
+        with self.assertRaises(base.CollectionError):
+            batch4.require_marketdata_preflight({**good, "rate_limit_consumed": 2}, 32)
+        with self.assertRaises(base.CollectionError):
+            batch4.require_marketdata_preflight({**good, "rate_limit_reset_epoch": int(time.time()) - 1}, 32)
+
+    def test_historical_option_date_is_order_independent(self) -> None:
+        payload = {"t": [172800, 0, 86400, 172800]}
+        self.assertEqual(batch4.historical_option_date(payload), "1970-01-02")
+
+    def test_checkpoint_never_reuses_benchmark_quota_preflight(self) -> None:
+        run_id = 123
+        attempt = 2
+        head_sha = "a" * 40
+        ops = []
+        for shard_id, keys in resume4.EXPECTED_SHARD_KEYS.items():
+            if shard_id != 0:
+                continue
+            for entity, category in sorted(keys):
+                ops.append({
+                    "entity": entity,
+                    "category": category,
+                    "payload": {},
+                    "receipt": {"response_sha256": "b" * 64},
+                    "origin_attempt": 1,
+                })
+        ops.append({
+            "entity": base.BENCHMARK,
+            "category": "benchmark_market_time_series",
+            "payload": {},
+            "receipt": {
+                "response_sha256": "c" * 64,
+                "rate_limit_remaining": 99,
+                "rate_limit_reset_epoch": int(time.time()) + 3600,
+            },
+            "origin_attempt": 1,
+        })
+        value = {
+            "schema_version": resume4.CHECKPOINT_SCHEMA,
+            "status": resume4.CHECKPOINT_STATUS,
+            "repository": batch4.PUBLIC_REPOSITORY,
+            "workflow_run_id": run_id,
+            "workflow_run_attempt": 1,
+            "head_sha": head_sha,
+            "collection_started_at_utc": "2026-10-01T00:00:00Z",
+            "resumed_from_attempt": None,
+            "resume_policy": resume4.RESUME_POLICY,
+            "operations": ops,
+            "authorized_actions": [],
+            "checkpoint_sha256": "0" * 64,
+        }
+        value["checkpoint_sha256"] = resume4.checkpoint_digest(value)
+        prior, _, reusable, reused_shards, benchmark_reused = resume4.validate_checkpoint(
+            value,
+            current_run_id=run_id,
+            current_attempt=attempt,
+            current_head_sha=head_sha,
         )
-        batch4.require_marketdata_budget(
-            {"rate_limit_remaining": 0, "rate_limit_reset_epoch": int(time.time()) - 1},
-            32,
-        )
+        self.assertEqual(prior, 1)
+        self.assertEqual(reused_shards, [0])
+        self.assertFalse(benchmark_reused)
+        self.assertNotIn(resume4.BENCHMARK_KEY, reusable)
 
     def test_batch_three_files_remain_present(self) -> None:
         self.assertTrue((ROOT / "config/r11_batch_003.json").is_file())

@@ -32,27 +32,27 @@ def checkpoint_digest(rows: list[dict[str, Any]]) -> str:
 
 def historical_option_date(payload: dict[str, Any]) -> str:
     values = payload.get("t")
-    collector.require(isinstance(values, list) and len(values) >= 2, "MarketData candle payload lacks a prior closed session")
+    collector.require(isinstance(values, list), "MarketData candle payload has no timestamps")
     try:
-        # Always use the penultimate daily candle. During market hours the last
-        # candle may represent the current session, which would forfeit the
-        # historical option-chain credit model. One session older is guaranteed
-        # to be historical while remaining inside the frozen 168-hour window.
-        return datetime.fromtimestamp(float(values[-2]), tz=timezone.utc).date().isoformat()
+        ordered = sorted({float(value) for value in values})
+        collector.require(len(ordered) >= 2, "MarketData candle payload lacks a prior closed session")
+        # Use the second-latest distinct trading session. Sorting makes the
+        # safety property independent of response ordering.
+        return datetime.fromtimestamp(ordered[-2], tz=timezone.utc).date().isoformat()
     except (TypeError, ValueError, OSError) as exc:
         raise collector.CollectionError("MarketData candle timestamp is invalid") from exc
 
 
-def require_marketdata_budget(receipt: dict[str, Any], remaining_calls: int) -> None:
+def require_marketdata_preflight(receipt: dict[str, Any], remaining_calls: int) -> None:
     collector.require(remaining_calls >= 0, "remaining MarketData call count is invalid")
-    remaining = receipt.get("rate_limit_remaining")
-    reset_epoch = receipt.get("rate_limit_reset_epoch")
-    if not isinstance(remaining, int):
-        return
-    # Cached checkpoint receipts can carry an old rate-limit window. Only use
-    # the budget when its reset is still in the future (or reset is unavailable).
-    if isinstance(reset_epoch, int) and reset_epoch <= int(collector.time.time()):
-        return
+    required = ("rate_limit_limit", "rate_limit_remaining", "rate_limit_consumed", "rate_limit_reset_epoch")
+    missing = [field for field in required if not isinstance(receipt.get(field), int)]
+    collector.require(not missing, f"MarketData quota preflight headers missing: {missing}")
+    consumed = int(receipt["rate_limit_consumed"])
+    remaining = int(receipt["rate_limit_remaining"])
+    reset_epoch = int(receipt["rate_limit_reset_epoch"])
+    collector.require(0 <= consumed <= 1, f"MarketData QQQ preflight consumed unexpected credits: {consumed}")
+    collector.require(reset_epoch > int(collector.time.time()), "MarketData quota preflight reset timestamp is stale")
     collector.require(
         remaining >= remaining_calls,
         f"MarketData credit budget insufficient: remaining={remaining}, required_after_current={remaining_calls}, reset_epoch={reset_epoch}",
@@ -112,7 +112,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
     }
     request_receipts.append(benchmark_receipt)
     remaining_marketdata_calls = 32  # 16 ticker candles + 16 historical option chains
-    require_marketdata_budget(benchmark_receipt, remaining_marketdata_calls)
+    require_marketdata_preflight(benchmark_receipt, remaining_marketdata_calls)
 
     # Execute the sixteen ticker/provider operations as four deterministic shards.
     # Each shard performs 4 tickers x 4 provider categories = 16 operations and
@@ -172,7 +172,6 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
             )
             candle_receipt = {**candle_receipt, "operation": "daily_candles", "category": "market_time_series", "entity": ticker}
             remaining_marketdata_calls -= 1
-            require_marketdata_budget(candle_receipt, remaining_marketdata_calls)
             payloads[(ticker, "market_time_series")] = candles
             receipts[(ticker, "market_time_series")] = candle_receipt
             request_receipts.append(candle_receipt)
@@ -202,7 +201,6 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
                 "marketdata_option_date_source": "penultimate_daily_candle_session",
             }
             remaining_marketdata_calls -= 1
-            require_marketdata_budget(option_receipt, remaining_marketdata_calls)
             payloads[(ticker, "specialized_contract_data")] = options
             receipts[(ticker, "specialized_contract_data")] = option_receipt
             request_receipts.append(option_receipt)

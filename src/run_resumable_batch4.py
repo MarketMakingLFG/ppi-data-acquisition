@@ -90,9 +90,9 @@ def validate_checkpoint(
     for shard_id in reusable_shards:
         for key in EXPECTED_SHARD_KEYS[shard_id]:
             reusable[key] = by_key[key]
-    benchmark_reused = BENCHMARK_KEY in by_key
-    if benchmark_reused:
-        reusable[BENCHMARK_KEY] = by_key[BENCHMARK_KEY]
+    # The benchmark doubles as the live MarketData quota preflight. Never
+    # reuse it across attempts: every retry must obtain fresh rate-limit headers.
+    benchmark_reused = False
     return prior_attempt, started, reusable, reusable_shards, benchmark_reused
 
 
