@@ -13,7 +13,9 @@ import collect_raw_provider_evidence as collector
 PUBLIC_REPOSITORY = "MarketMakingLFG/ppi-data-acquisition"
 PUBLIC_REPOSITORY_ID = 1312286476
 PUBLIC_CONTRACT_ID = "PPI-R11-PUBLIC-ACQUISITION-004-R1"
-PRIVATE_CONTRACT_ID = "PPI-R11-BATCH-EVIDENCE-004-R1"\nCOLLECTOR_RELEASE_ID = "PPI-PUBLIC-COLLECTOR-004-R1"
+PRIVATE_CONTRACT_ID = "PPI-R11-BATCH-EVIDENCE-004-R1"
+COLLECTOR_RELEASE_ID = "PPI-PUBLIC-COLLECTOR-004-R1"
+WORKFLOW_PATH = ".github/workflows/collect-r11-public-evidence-batch4.yml"
 SHARDS = (
     (0, ["AAPL", "MU", "NVDA", "AMD"]),
     (1, ["AVGO", "INTC", "TSM", "ARM"]),
@@ -51,7 +53,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
     shard_rows: list[dict[str, Any]] = []
     alpha_index = 0
 
-    # Execute the twelve ticker/provider operations as four deterministic shards.
+    # Execute the sixteen ticker/provider operations as four deterministic shards.
     # Each shard performs 4 tickers x 4 provider categories = 16 operations and
     # records a checkpoint digest from the actual provider response receipts.
     for shard_id, tickers in SHARDS:
@@ -218,7 +220,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
         "schema_version": "1.0.0",
         "status": "private_handoff_candidate_complete",
         "contract_id": PUBLIC_CONTRACT_ID,
-        "private_contract_id": collector.PRIVATE_CONTRACT_ID,
+        "private_contract_id": PRIVATE_CONTRACT_ID,
         "collector_release_id": COLLECTOR_RELEASE_ID,
         "queue_receipt_sha256": collector.QUEUE_RECEIPT_SHA256,
         "batch_sequence": 4,
@@ -242,7 +244,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
         "status": "collection_complete_private_handoff",
         "repository": PUBLIC_REPOSITORY,
         "repository_id": PUBLIC_REPOSITORY_ID,
-        "workflow_path": collector.WORKFLOW_PATH,
+        "workflow_path": WORKFLOW_PATH,
         "workflow_run_id": int(os.environ.get("GITHUB_RUN_ID", "0")),
         "workflow_run_attempt": int(os.environ.get("GITHUB_RUN_ATTEMPT", "0")),
         "head_sha": os.environ.get("GITHUB_SHA", "").lower(),
@@ -251,7 +253,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
         "collection_started_at_utc": collection_started,
         "collection_completed_at_utc": collection_completed,
         "contract_id": PUBLIC_CONTRACT_ID,
-        "private_contract_id": collector.PRIVATE_CONTRACT_ID,
+        "private_contract_id": PRIVATE_CONTRACT_ID,
         "collector_release_id": COLLECTOR_RELEASE_ID,
         "queue_receipt_sha256": collector.QUEUE_RECEIPT_SHA256,
         "batch_sequence": 4,
@@ -280,7 +282,7 @@ def collect_sharded(scope: dict[str, Any], output_root: Path, request_id: str, s
         "status": "r11_public_shards_complete",
         "repository": PUBLIC_REPOSITORY,
         "repository_id": PUBLIC_REPOSITORY_ID,
-        "workflow_path": collector.WORKFLOW_PATH,
+        "workflow_path": WORKFLOW_PATH,
         "workflow_run_id": collection_receipt["workflow_run_id"],
         "workflow_run_attempt": collection_receipt["workflow_run_attempt"],
         "head_sha": collection_receipt["head_sha"],
@@ -304,7 +306,9 @@ def main() -> int:
     collector.PUBLIC_REPOSITORY = PUBLIC_REPOSITORY
     collector.PUBLIC_REPOSITORY_ID = PUBLIC_REPOSITORY_ID
     collector.PUBLIC_CONTRACT_ID = PUBLIC_CONTRACT_ID
+    collector.PRIVATE_CONTRACT_ID = PRIVATE_CONTRACT_ID
     collector.COLLECTOR_RELEASE_ID = COLLECTOR_RELEASE_ID
+    collector.WORKFLOW_PATH = WORKFLOW_PATH
 
     parser = argparse.ArgumentParser(description="Collect the exact sharded R11 batch-4 public provider package")
     parser.add_argument("--scope", type=Path, required=True)
