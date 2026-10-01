@@ -63,7 +63,8 @@ async function github(path, token, method = "GET", body) {
   });
   if (!response.ok) throw new Error("GitHub API status " + response.status);
   if (response.status === 204) return null;
-  return response.json();
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
 
 function parseCallback(payload) {
@@ -140,6 +141,33 @@ function audit(decision, payload, deliveryId, extra = {}) {
     head_sha: payload?.sha || null,
     ...extra
   }));
+}
+
+export async function redeliverLatestFailedProtection(env) {
+  const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+  const app = await github("/app", jwt);
+  requirePolicy(app?.id === Number(env.GITHUB_APP_ID), "app_identity_mismatch");
+  const deliveries = await github("/app/hook/deliveries?per_page=30&status=failure", jwt);
+  requirePolicy(Array.isArray(deliveries), "delivery_list_invalid");
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  const candidate = deliveries
+    .filter(d =>
+      d?.event === "deployment_protection_rule" &&
+      d?.action === "requested" &&
+      d?.repository_id === EXPECTED_REPO_ID &&
+      Number(d?.status_code) >= 400 &&
+      Number.isFinite(Date.parse(d?.delivered_at || "")) &&
+      Date.parse(d.delivered_at) >= cutoff
+    )
+    .sort((a, b) => Date.parse(b.delivered_at) - Date.parse(a.delivered_at))[0];
+  if (!candidate) return { redelivered: false, reason: "no_recent_failed_protection_delivery" };
+  await github("/app/hook/deliveries/" + candidate.id + "/attempts", jwt, "POST");
+  return {
+    redelivered: true,
+    delivery_id: candidate.id,
+    delivery_guid: candidate.guid || null,
+    original_status_code: candidate.status_code
+  };
 }
 
 export default {
