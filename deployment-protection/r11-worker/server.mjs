@@ -1,9 +1,16 @@
 import http from "node:http";
-import worker, { redeliverLatestFailedProtection, selfTest } from "./worker.mjs";\n\nlet readiness = { ok: false, reason: "startup_probe_pending" };
+import worker, { redeliverLatestFailedProtection, selfTest } from "./worker.mjs";
+
+let readiness = { ok: false, reason: "startup_probe_pending" };
 
 const port = Number(process.env.PORT || 10000);
 const server = http.createServer(async (req, res) => {
-  if (req.method === "GET" && req.url === "/readyz") {\n    res.writeHead(readiness.ok ? 200 : 503, { "content-type": "application/json" });\n    return res.end(JSON.stringify(readiness));\n  }\n\n  if (req.method === "GET" && req.url === "/healthz") {
+  if (req.method === "GET" && req.url === "/readyz") {
+    res.writeHead(readiness.ok ? 200 : 503, { "content-type": "application/json" });
+    return res.end(JSON.stringify(readiness));
+  }
+
+  if (req.method === "GET" && req.url === "/healthz") {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({
       status: "ok",
@@ -37,14 +44,22 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, "0.0.0.0", async () => {
-  console.log("R11 autonomous protection service listening");\n  try {\n    readiness = await selfTest(process.env);\n    console.log(JSON.stringify({ type: "r11_startup_self_test", ...readiness }));\n  } catch (error) {\n    readiness = { ok: false, reason: String(error?.code || error?.message || "startup_probe_failed").slice(0, 160) };\n    console.log(JSON.stringify({ type: "r11_startup_self_test", ...readiness }));\n  }
+  console.log("R11 autonomous protection service listening");
+  try {
+    readiness = await selfTest(process.env);
+    console.log(JSON.stringify({ type: "r11_startup_self_test", ...readiness }));
+  } catch (error) {
+    readiness = {
+      ok: false,
+      reason: String(error?.code || error?.message || "startup_probe_failed").slice(0, 160)
+    };
+    console.log(JSON.stringify({ type: "r11_startup_self_test", ...readiness }));
+  }
+
   if (process.env.PPI_REDELIVER_FAILED_ON_START === "true") {
     try {
       const result = await redeliverLatestFailedProtection(process.env);
-      console.log(JSON.stringify({
-        type: "r11_webhook_recovery",
-        ...result
-      }));
+      console.log(JSON.stringify({ type: "r11_webhook_recovery", ...result }));
     } catch (error) {
       console.log(JSON.stringify({
         type: "r11_webhook_recovery",
