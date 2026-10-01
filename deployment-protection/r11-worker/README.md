@@ -12,7 +12,7 @@ A request can be approved only when all of the following are true:
 
 - GitHub webhook HMAC-SHA256 verification succeeds before JSON parsing.
 - Event is `deployment_protection_rule` with action `requested`.
-- Repository is exactly `MarketMakingLFG/ppi-data-acquisition` and is private.
+- Repository full name is exactly `MarketMakingLFG/ppi-data-acquisition` and immutable repository ID is exactly `1312286476`.
 - Environment is exactly `r11-public-acquisition-protected`.
 - Trigger is exactly `workflow_dispatch`.
 - Ref is exactly `refs/heads/main`.
@@ -21,7 +21,7 @@ A request can be approved only when all of the following are true:
 - Workflow path is exactly `.github/workflows/collect-r11-public-evidence.yml` (GitHub's `@ref` suffix is accepted).
 - GitHub App ID matches the configured App when the webhook payload supplies App identity.
 - The service successfully creates a GitHub App JWT and installation access token.
-- A fresh live copy of the workflow run is fetched from GitHub and still matches the payload.
+- A fresh live copy of the workflow run is fetched from GitHub and still matches the payload, including repository ID `1312286476`.
 - The run is not concluded and is not older than the configured freshness window (default 3600 seconds).
 - GitHub's pending-deployments API confirms that `r11-public-acquisition-protected` is still waiting for protection.
 
