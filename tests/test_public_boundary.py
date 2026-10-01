@@ -27,6 +27,45 @@ class PublicBoundaryTests(unittest.TestCase):
         self.assertTrue(scope["private_release_handoff_required"])
         self.assertEqual(scope["authorized_actions"], [])
 
+    def test_batch_four_contract_candidate_is_exact_and_non_authorizing(self) -> None:
+        scope = json.loads((ROOT / "config/r11_batch_004.json").read_text(encoding="utf-8"))
+        acquisition = json.loads((ROOT / "contracts/PPI-R11-PUBLIC-ACQUISITION-004-R1.json").read_text(encoding="utf-8"))
+        collector = json.loads((ROOT / "contracts/PPI-PUBLIC-COLLECTOR-004-R1.json").read_text(encoding="utf-8"))
+        licensing = json.loads((ROOT / "config/provider_licensing_dispositions_batch4.json").read_text(encoding="utf-8"))
+
+        expected = ["AAPL","MU","NVDA","AMD","AVGO","INTC","TSM","ARM","QCOM","MRVL","GFS","TXN","STM","ON","NXPI","MCHP"]
+        self.assertEqual(scope["status"] if "status" in scope else "review_candidate", "review_candidate")
+        self.assertEqual(acquisition["status"], "review_candidate")
+        self.assertEqual(collector["status"], "review_candidate")
+        self.assertEqual(licensing["status"], "review_candidate")
+        self.assertEqual(scope["batch_sequence"], 4)
+        self.assertEqual(scope["cumulative_tickers"], expected)
+        self.assertEqual(scope["new_candidate_tickers"], ["STM","ON","NXPI","MCHP"])
+        self.assertEqual(len(scope["cumulative_tickers"]) * len(scope["categories"]), 64)
+        self.assertEqual(scope["expected_bundle_count"], 64)
+        self.assertEqual(scope["expected_path_count"], 66)
+        self.assertEqual(scope["expected_provider_request_count"], 65)
+        self.assertEqual(scope["expected_alpha_vantage_request_count"], 16)
+        self.assertEqual(sum(len(item["tickers"]) for item in scope["shards"]), 16)
+        self.assertEqual([ticker for item in scope["shards"] for ticker in item["tickers"]], expected)
+        self.assertEqual(acquisition["exact_success_package"], {"bundle_count": 64, "manifest_count": 1, "receipt_count": 1, "path_count": 66})
+        self.assertEqual(collector["expected_provider_request_count"], 65)
+        self.assertEqual(collector["expected_bundle_count"], 64)
+        self.assertEqual(collector["expected_path_count"], 66)
+        self.assertEqual(collector["source_binding"]["licensing_path"], "config/provider_licensing_dispositions_batch4.json")
+        self.assertEqual(licensing["expected_provider_request_count"], 65)
+        limits = {(item["provider"], item["operation"]): item["maximum_batch_requests"] for item in licensing["dispositions"]}
+        self.assertEqual(limits[("yahoo_finance_via_yfinance","expectation_history")], 16)
+        self.assertEqual(limits[("alpha_vantage","NEWS_SENTIMENT")], 16)
+        self.assertEqual(limits[("marketdata","daily_candles")], 17)
+        self.assertEqual(limits[("marketdata","option_chain")], 16)
+        for value in (scope, acquisition):
+            for field in ("private_dispatch_authorized","scoring_authorized","registry_mutation_authorized","production_authorized","publication_authorized","trading_authorized","r12_authorized"):
+                self.assertIs(value[field], False)
+            self.assertEqual(value["authorized_actions"], [])
+        self.assertEqual(collector["authorized_actions"], [])
+        self.assertEqual(licensing["authorized_actions"], [])
+
     def test_workflow_is_manual_dispatch_read_only_and_private_handoff_only(self) -> None:
         text = (ROOT / ".github/workflows/collect-r11-public-evidence.yml").read_text(encoding="utf-8")
         self.assertIn("\n  workflow_dispatch:\n", text)
