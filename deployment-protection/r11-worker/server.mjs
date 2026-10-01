@@ -1,14 +1,14 @@
 import http from "node:http";
-import worker, { redeliverLatestFailedProtection } from "./worker.mjs";
+import worker, { redeliverLatestFailedProtection, selfTest } from "./worker.mjs";\n\nlet readiness = { ok: false, reason: "startup_probe_pending" };
 
 const port = Number(process.env.PORT || 10000);
 const server = http.createServer(async (req, res) => {
-  if (req.method === "GET" && req.url === "/healthz") {
+  if (req.method === "GET" && req.url === "/readyz") {\n    res.writeHead(readiness.ok ? 200 : 503, { "content-type": "application/json" });\n    return res.end(JSON.stringify(readiness));\n  }\n\n  if (req.method === "GET" && req.url === "/healthz") {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({
       status: "ok",
       mode: "autonomous-policy",
-      policy: "r11-autonomous-v2"
+      policy: "r11-autonomous-v3"
     }));
   }
 
@@ -37,7 +37,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, "0.0.0.0", async () => {
-  console.log("R11 autonomous protection service listening");
+  console.log("R11 autonomous protection service listening");\n  try {\n    readiness = await selfTest(process.env);\n    console.log(JSON.stringify({ type: "r11_startup_self_test", ...readiness }));\n  } catch (error) {\n    readiness = { ok: false, reason: String(error?.code || error?.message || "startup_probe_failed").slice(0, 160) };\n    console.log(JSON.stringify({ type: "r11_startup_self_test", ...readiness }));\n  }
   if (process.env.PPI_REDELIVER_FAILED_ON_START === "true") {
     try {
       const result = await redeliverLatestFailedProtection(process.env);
