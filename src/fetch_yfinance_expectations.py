@@ -10,6 +10,7 @@ from typing import Any
 SUPPORTED_ENTITIES = (
     "AAPL", "MU", "NVDA", "AMD", "AVGO", "INTC",
     "TSM", "ARM", "QCOM", "MRVL", "GFS", "TXN",
+    "STM", "ON", "NXPI", "MCHP",
 )
 EXPECTED_YFINANCE_VERSION = "1.5.1"
 

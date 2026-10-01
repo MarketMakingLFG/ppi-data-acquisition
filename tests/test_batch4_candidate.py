@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import collect_raw_provider_evidence as base  # noqa: E402
 import collect_raw_provider_evidence_batch4 as batch4  # noqa: E402
+import fetch_yfinance_expectations as yfx  # noqa: E402
 import run_resumable_batch4 as resume4  # noqa: E402
 import publish_private_handoff_batch4 as handoff4  # noqa: E402
 import private_checkpoint_store_batch4 as checkpoint4  # noqa: E402
@@ -34,6 +35,16 @@ class BatchFourCandidateTests(unittest.TestCase):
         self.assertEqual(scope["expected_alpha_vantage_request_count"], 16)
         self.assertEqual([ticker for _, tickers in batch4.SHARDS for ticker in tickers], expected)
         self.assertEqual(len(resume4.ALL_EXPECTED_KEYS), 65)
+
+    def test_yahoo_expectation_fetcher_accepts_exact_batch_four_cumulative_scope(self) -> None:
+        expected = (
+            "AAPL","MU","NVDA","AMD","AVGO","INTC","TSM","ARM",
+            "QCOM","MRVL","GFS","TXN","STM","ON","NXPI","MCHP",
+        )
+        self.assertEqual(yfx.SUPPORTED_ENTITIES, expected)
+        self.assertEqual(yfx.SUPPORTED_ENTITIES[:12], (
+            "AAPL","MU","NVDA","AMD","AVGO","INTC","TSM","ARM","QCOM","MRVL","GFS","TXN"
+        ))
 
     def test_collector_identity_is_batch_four_only(self) -> None:
         self.assertEqual(batch4.PUBLIC_CONTRACT_ID, "PPI-R11-PUBLIC-ACQUISITION-004-R1")
