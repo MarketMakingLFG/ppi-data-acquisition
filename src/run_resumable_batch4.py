@@ -242,7 +242,9 @@ def main() -> int:
     collector.PUBLIC_REPOSITORY = r2.PUBLIC_REPOSITORY
     collector.PUBLIC_REPOSITORY_ID = r2.PUBLIC_REPOSITORY_ID
     collector.PUBLIC_CONTRACT_ID = r2.PUBLIC_CONTRACT_ID
-    collector.PRIVATE_CONTRACT_ID = r2.PRIVATE_CONTRACT_ID\n    collector.COLLECTOR_RELEASE_ID = r2.COLLECTOR_RELEASE_ID\n    collector.WORKFLOW_PATH = r2.WORKFLOW_PATH
+    collector.PRIVATE_CONTRACT_ID = r2.PRIVATE_CONTRACT_ID
+    collector.COLLECTOR_RELEASE_ID = r2.COLLECTOR_RELEASE_ID
+    collector.WORKFLOW_PATH = r2.WORKFLOW_PATH
 
     prior_attempt, started, reusable, reused_shards, benchmark_reused = load_prior_checkpoint(
         args.checkpoint_input, run_id=run_id, attempt=attempt, head_sha=head_sha
