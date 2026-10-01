@@ -30,7 +30,7 @@ function makeEvent(overrides = {}) {
     event: "workflow_dispatch",
     ref: "refs/heads/main",
     sha,
-    repository: { full_name: "MarketMakingLFG/ppi-data-acquisition", private: true },
+    repository: { id: 1312286476, full_name: "MarketMakingLFG/ppi-data-acquisition", private: false },
     workflow_run: run,
     installation: { id: 456 },
     deployment_protection_rule: { id: 789, app: { id: 123456 } },
