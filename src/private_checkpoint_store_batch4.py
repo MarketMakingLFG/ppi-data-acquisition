@@ -15,11 +15,11 @@ from typing import Any
 
 from publish_private_handoff_batch4 import API_ROOT, PRIVATE_REPOSITORY, PRIVATE_REPOSITORY_ID, UPLOAD_ROOT, api, canonical_json, require
 
-ASSET_RE = re.compile(r"^ppi-r11-checkpoint-(\d+)-(\d+)-([0-9a-f]{64})-([0-9a-f]{64})\.json$")
+ASSET_RE = re.compile(r"^ppi-r11-batch4-checkpoint-(\\d+)-(\\d+)-([0-9a-f]{64})-([0-9a-f]{64})\\.json$")
 CHECKPOINT_STATUS = "r11_private_checkpoint_material"
 RELEASE_PREFIX = "ppi-r11-batch4-checkpoints-"
 AUTH_SCHEME = "hmac-sha256-domain-separated-v1"
-AUTH_DOMAIN = b"PPI-R11-BATCH3-R2/private-checkpoint/v1\0"
+AUTH_DOMAIN = b"PPI-R11-BATCH4-R1/private-checkpoint/v1\\0"
 
 
 def workflow_identity() -> tuple[int, int, str]:
